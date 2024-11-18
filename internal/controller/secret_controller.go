@@ -97,6 +97,8 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	// TODO: Test for pod without secret as well, and think about creating a
 	// CRO for podsWithSecretsList or something and update that rather than fetching
 	// podList and doing all these secret checks every time reconcile is called
+	// TODO: check if the secret that is being added to the list actually exists!
+	// If it does, add immutable!
 	for _, pod := range podList.Items {
 		// pod.Volumes.Secret.SecretName
 		for _, volume := range pod.Spec.Volumes {
