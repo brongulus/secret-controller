@@ -62,8 +62,6 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	// TODO: handle ac for adding the label
 	// TODO: index of used secrets only
 	// TODO: create a pod controller that adds readonly to secret volumes?
-	// But how to identify secret pods? Maybe look into where they're referred
-	// https://stackoverflow.com/questions/46406596/how-to-identify-unused-secrets-in-kubernetes
 
 	log.Info(secret.Name)
 
@@ -93,58 +91,62 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, fmt.Errorf("failed to list pods: %w", err)
 	}
 
-	secretNames := sets.New[string]() // FIXME
+	secretsOnPods := sets.New[string]() // FIXME
 
 	// Process each pod (Maybe cache already checked pods for perf?)
 	// TODO: Test for pod without secret as well, and think about creating a
 	// CRO for podsWithSecretsList or something and update that rather than fetching
 	// podList and doing all these secret checks every time reconcile is called
 	for _, pod := range podList.Items {
-		for _, container := range pod.Spec.Containers {
-			for _, env := range container.Env {
-				if env.ValueFrom != nil && env.ValueFrom.SecretKeyRef != nil {
-					log.Info(pod.Name)
-					secretNames.Insert(env.ValueFrom.SecretKeyRef.Name)
-				}
-			}
-			for _, envFrom := range container.EnvFrom {
-				if envFrom.SecretRef != nil {
-					log.Info(pod.Name)
-					secretNames.Insert(envFrom.SecretRef.Name)
-				}
-			}
-		}
-
+		// pod.Volumes.Secret.SecretName
 		for _, volume := range pod.Spec.Volumes {
 			if volume.Secret != nil {
 				log.Info(pod.Name)
-				secretNames.Insert(volume.Secret.SecretName)
+				secretsOnPods.Insert(volume.Secret.SecretName)
 			}
 		}
 
+		// Ref: https://stackoverflow.com/questions/46406596/how-to-identify-unused-secrets-in-kubernetes
+		for _, container := range pod.Spec.Containers {
+			// pod.Containers.Env.ValueFrom.SecretKeyRef.Name
+			for _, env := range container.Env {
+				if env.ValueFrom != nil && env.ValueFrom.SecretKeyRef != nil {
+					log.Info(pod.Name)
+					secretsOnPods.Insert(env.ValueFrom.SecretKeyRef.Name)
+				}
+			}
+			// pod.Containers.EnvFrom.SecretRef.Name
+			for _, envFrom := range container.EnvFrom {
+				if envFrom.SecretRef != nil {
+					log.Info(pod.Name)
+					secretsOnPods.Insert(envFrom.SecretRef.Name)
+				}
+			}
+		}
+		// pod.ImagePullSecrets.Name
 		for _, imagePullSecret := range pod.Spec.ImagePullSecrets {
 			if imagePullSecret.Name != "" { // FIXME
 				log.Info(pod.Name)
-				secretNames.Insert(imagePullSecret.Name)
+				secretsOnPods.Insert(imagePullSecret.Name)
 			}
 		}
 	}
 
+	// TODO: Remove secList and secretSet later, not needed with secretsOnPodsSet
 	secList := &corev1.SecretList{}
 	if err := r.List(ctx, secList, client.InNamespace(req.Namespace)); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to list secrets: %w", err)
 	}
 
-	totalSecrets := sets.New[string]() // Get all secrets
+	secretSet := sets.New[string]() // Get all secrets
 	for _, sec := range secList.Items {
 		if sec.Name != "" { // FIXME
-			totalSecrets.Insert(sec.Name)
+			secretSet.Insert(sec.Name)
 		}
 	}
 
-	// Debug log
 	log.V(1).Info("processed pods for secret references",
-		"uniqueSecrets", secretNames.Len(), "totalSecrets", totalSecrets.Len())
+		"uniqueSecrets", secretsOnPods.Len(), "totalSecrets", secretSet.Len())
 
 	return ctrl.Result{}, nil
 }
@@ -152,8 +154,8 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 // SetupWithManager sets up the controller with the Manager.
 func (r *SecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&corev1.Secret{}).
-		Watches( // Needed to check which secrets are being used by pods
+		For(&corev1.Secret{}). // FIXME
+		Watches(               // Needed to check which secrets are being used by pods
 			&corev1.Pod{},
 			&handler.EnqueueRequestForObject{},
 		).
