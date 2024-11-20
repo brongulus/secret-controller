@@ -35,6 +35,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
+	batchv1 "github.com/brongulus/secret-controller/api/v1"
 	"github.com/brongulus/secret-controller/internal/controller"
 	// +kubebuilder:scaffold:imports
 )
@@ -47,6 +48,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
+	utilruntime.Must(batchv1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -142,11 +144,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controller.PodReconciler{
+	if err = (&controller.ImmutableImagesReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Pod")
+		setupLog.Error(err, "unable to create controller", "controller", "ImmutableImages")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

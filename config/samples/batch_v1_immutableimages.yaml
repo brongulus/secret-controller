@@ -1,0 +1,9 @@
+apiVersion: batch.github.com/v1
+kind: ImmutableImages
+metadata:
+  labels:
+    app.kubernetes.io/name: secret-controller
+    app.kubernetes.io/managed-by: kustomize
+  name: immutableimages-sample
+spec:
+  # TODO(user): Add fields here

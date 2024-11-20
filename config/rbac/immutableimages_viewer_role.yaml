@@ -1,0 +1,23 @@
+# permissions for end users to view immutableimages.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: secret-controller
+    app.kubernetes.io/managed-by: kustomize
+  name: immutableimages-viewer-role
+rules:
+- apiGroups:
+  - batch.github.com
+  resources:
+  - immutableimages
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - batch.github.com
+  resources:
+  - immutableimages/status
+  verbs:
+  - get
