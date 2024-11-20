@@ -38,6 +38,12 @@ var _ = Describe("Pod Controller", func() {
 		interval = time.Millisecond * 250
 	)
 
+	// TODO: add a test that tries to update a reconciled secret
+	// TODO: add multiple secrets to a pod, add secrets that don't exist
+	// TODO: add no secrets to a pod
+	// TODO: use deployment, delete pods, delete secrets
+	// FIXME: Ensure https://github.com/kubernetes-sigs/controller-runtime/blob/main/FAQ.md this is satisfied
+
 	Context("When adding a pod having a secret", func() {
 		It("should make the secret immutable", func() {
 			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
