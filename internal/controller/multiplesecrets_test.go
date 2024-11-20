@@ -164,7 +164,7 @@ var _ = Describe("ImmutableImages Controller", func() {
 								{
 									SecretRef: &corev1.SecretEnvSource{
 										LocalObjectReference: corev1.LocalObjectReference{
-											Name: testSecretName + "3", // FIXME Get panics for non-existent secret
+											Name: testSecretName + "3", // FIXME Get panics for non-existent secret, maybe re-call reconcile after a while
 										},
 									},
 								},

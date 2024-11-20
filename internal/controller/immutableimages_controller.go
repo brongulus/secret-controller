@@ -74,6 +74,51 @@ func (r *ImmutableImagesReconciler) tagSecretAsImmutable(ctx context.Context, re
 	return secretName, nil
 }
 
+// Checks if there are secrets for the pod satisfying the
+// immutableimage criteria, returns their set
+func (r *ImmutableImagesReconciler) fetchPodSecrets(imageList batchv1.ImmutableImages, pod corev1.Pod) (sets.Set[string], error) {
+	secretList := sets.New[string]()
+
+	// pod.Volumes.Secret.SecretName
+	for _, volume := range pod.Spec.Volumes {
+		if volume.Secret != nil {
+			// Check if the particular volume has an associated immutable image
+			hasImmutableImage := slices.ContainsFunc(pod.Spec.Containers, func(container corev1.Container) bool {
+				for _, mount := range container.VolumeMounts {
+					if mount.Name == volume.Name {
+						return slices.Contains(imageList.Spec.Images, container.Image)
+					}
+				}
+				return false
+			})
+			// log.V(1).Info(fmt.Sprint(hasImmutableImage))
+			if hasImmutableImage {
+				secretList.Insert(volume.Secret.SecretName)
+			}
+		}
+	}
+
+	// Ref: https://stackoverflow.com/questions/46406596/how-to-identify-unused-secrets-in-kubernetes
+	// Ref: https://kubernetes.io/docs/tasks/inject-data-application/distribute-credentials-secure/
+	for _, container := range pod.Spec.Containers {
+		hasImmutableImage := slices.Contains(imageList.Spec.Images, container.Image)
+		// pod.Containers.Env.ValueFrom.SecretKeyRef.Name
+		for _, env := range container.Env {
+			if env.ValueFrom != nil && env.ValueFrom.SecretKeyRef != nil && hasImmutableImage {
+				secretList.Insert(env.ValueFrom.SecretKeyRef.Name)
+			}
+		}
+		// pod.Containers.EnvFrom.SecretRef.Name
+		for _, envFrom := range container.EnvFrom {
+			if envFrom.SecretRef != nil && hasImmutableImage {
+				secretList.Insert(envFrom.SecretRef.Name)
+			}
+		}
+	}
+
+	return secretList, nil
+}
+
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 // TODO(user): Modify the Reconcile function to compare the state specified by
@@ -107,43 +152,9 @@ func (r *ImmutableImagesReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		log.Info(pod.Name)
 
 		// Get list of all the secrets attached to a pod
-		secretList := sets.New[string]()
-
-		// pod.Volumes.Secret.SecretName
-		for _, volume := range pod.Spec.Volumes {
-			if volume.Secret != nil {
-				// Check if the particular volume has an associated immutable image
-				hasImmutableImage := slices.ContainsFunc(pod.Spec.Containers, func(container corev1.Container) bool {
-					for _, mount := range container.VolumeMounts {
-						if mount.Name == volume.Name {
-							return slices.Contains(imageList.Spec.Images, container.Image)
-						}
-					}
-					return false
-				})
-				// log.V(1).Info(fmt.Sprint(hasImmutableImage))
-				if hasImmutableImage {
-					secretList.Insert(volume.Secret.SecretName)
-				}
-			}
-		}
-
-		// Ref: https://stackoverflow.com/questions/46406596/how-to-identify-unused-secrets-in-kubernetes
-		// Ref: https://kubernetes.io/docs/tasks/inject-data-application/distribute-credentials-secure/
-		for _, container := range pod.Spec.Containers {
-			hasImmutableImage := slices.Contains(imageList.Spec.Images, container.Image)
-			// pod.Containers.Env.ValueFrom.SecretKeyRef.Name
-			for _, env := range container.Env {
-				if env.ValueFrom != nil && env.ValueFrom.SecretKeyRef != nil && hasImmutableImage {
-					secretList.Insert(env.ValueFrom.SecretKeyRef.Name)
-				}
-			}
-			// pod.Containers.EnvFrom.SecretRef.Name
-			for _, envFrom := range container.EnvFrom {
-				if envFrom.SecretRef != nil && hasImmutableImage {
-					secretList.Insert(envFrom.SecretRef.Name)
-				}
-			}
+		secretList, err := r.fetchPodSecrets(imageList, pod)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to get secrets: %w", err)
 		}
 
 		// Tag each secret as immutable

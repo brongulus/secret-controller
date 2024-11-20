@@ -1,6 +1,10 @@
 # secret-controller
 // TODO(user): Add simple overview of use/purpose
 
+## TODOs
+- FIXME pod watching (creation should trigger reconcile) is not happening at all!
+- Check when secret is deleted and a pod is created that refers it (secret Get failure)
+- imageList deletion/Get failure should remove the secrets from webhook blacklist?
 - Look for deletion (finalizer)
 - Add namespace to the CR as well
 - Validating Webhook (list of immutable secrets in CR status, on removal of image from the list, update the secret list), webhook implements the immutability indirectly to not have to resort to deletion of secrets and pods.

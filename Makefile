@@ -21,6 +21,10 @@ CONTAINER_TOOL ?= docker
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
+# For testing webhooks locally
+# source: https://github.com/kubernetes-sigs/kubebuilder/issues/400#issuecomment-1358891745
+CERTSDIR=/tmp/k8s-webhook-server/serving-certs
+
 .PHONY: all
 all: build
 
@@ -93,6 +97,13 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 .PHONY: build
 build: manifests generate fmt vet ## Build manager binary.
 	go build -o bin/manager cmd/main.go
+
+.PHONY: generate-certs
+generate-certs: ## Generates the certs required to run webhooks locally
+	mkdir -p $(CERTSDIR)
+	cd $(CERTSDIR) && \
+		openssl genrsa 2048 > tls.key && \
+		openssl req -new -x509 -nodes -sha256 -days 365 -key tls.key -out tls.crt -subj "/C=XX"
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
