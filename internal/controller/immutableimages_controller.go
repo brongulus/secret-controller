@@ -86,7 +86,6 @@ func (r *ImmutableImagesReconciler) tagSecretAsImmutable(ctx context.Context, re
 func (r *ImmutableImagesReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
-	// TODO(user): your logic here
 	var imageList batchv1.ImmutableImages
 	if err := r.Get(ctx, req.NamespacedName, &imageList); err != nil {
 		log.Error(err, "Could not fetch imagelist")
@@ -94,7 +93,6 @@ func (r *ImmutableImagesReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// FIXME: watch pod? fix GET call
-	// WIP: Get list of unused secrets
 	podList := &corev1.PodList{}
 	if err := r.List(ctx, podList, client.InNamespace(req.Namespace)); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to list pods: %w", err)
@@ -113,8 +111,20 @@ func (r *ImmutableImagesReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 		// pod.Volumes.Secret.SecretName
 		for _, volume := range pod.Spec.Volumes {
-			if volume.Secret != nil { // TODO: hasImmutableImage check
-				secretList.Insert(volume.Secret.SecretName)
+			if volume.Secret != nil {
+				// Check if the particular volume has an associated immutable image
+				hasImmutableImage := slices.ContainsFunc(pod.Spec.Containers, func(container corev1.Container) bool {
+					for _, mount := range container.VolumeMounts {
+						if mount.Name == volume.Name {
+							return slices.Contains(imageList.Spec.Images, container.Image)
+						}
+					}
+					return false
+				})
+				// log.V(1).Info(fmt.Sprint(hasImmutableImage))
+				if hasImmutableImage {
+					secretList.Insert(volume.Secret.SecretName)
+				}
 			}
 		}
 
@@ -123,27 +133,23 @@ func (r *ImmutableImagesReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		for _, container := range pod.Spec.Containers {
 			hasImmutableImage := slices.Contains(imageList.Spec.Images, container.Image)
 			// pod.Containers.Env.ValueFrom.SecretKeyRef.Name
-			for _, env := range container.Env { // TODO: its a list
+			for _, env := range container.Env {
 				if env.ValueFrom != nil && env.ValueFrom.SecretKeyRef != nil && hasImmutableImage {
 					secretList.Insert(env.ValueFrom.SecretKeyRef.Name)
 				}
 			}
 			// pod.Containers.EnvFrom.SecretRef.Name
-			for _, envFrom := range container.EnvFrom { // TODO: its a list
+			for _, envFrom := range container.EnvFrom {
 				if envFrom.SecretRef != nil && hasImmutableImage {
 					secretList.Insert(envFrom.SecretRef.Name)
 				}
 			}
 		}
-		// pod.ImagePullSecrets.Name
-		for _, imagePullSecret := range pod.Spec.ImagePullSecrets { // TODO: hasImmutableImage check
-			if imagePullSecret.Name != "" { // FIXME
-				secretList.Insert(imagePullSecret.Name)
-			}
-		}
 
 		// Tag each secret as immutable
 		for secret := range secretList {
+			// log.V(1).Info(fmt.Sprint(secret))
+
 			// FIXME: Is it an issue if early return happens i.e.
 			// it errors out while only tagging one secret and the
 			// rest aren't updated? Maybe call reconcile again
@@ -153,13 +159,15 @@ func (r *ImmutableImagesReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			}
 		}
 	}
+	// log.V(1).Info("Reconcile Over")
 	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ImmutableImagesReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&batchv1.ImmutableImages{}).
+		For(&batchv1.ImmutableImages{}). // TODO: add pod watcher
+
 		Named("immutableimages").
 		Complete(r)
 }

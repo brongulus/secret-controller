@@ -1,6 +1,10 @@
 # secret-controller
 // TODO(user): Add simple overview of use/purpose
 
+- Look for deletion (finalizer)
+- Add namespace to the CR as well
+- Validating Webhook (list of immutable secrets in CR status, on removal of image from the list, update the secret list), webhook implements the immutability indirectly to not have to resort to deletion of secrets and pods.
+
 ## Description
 // TODO(user): An in-depth paragraph about your project and overview of use
 

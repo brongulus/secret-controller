@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -37,6 +38,7 @@ var _ = Describe("ImmutableImages Controller", func() {
 			resourceName   = "test-resource"
 			testNamespace  = "default"
 			testSecretName = "test-secret"
+			numSecrets     = 4
 
 			timeout  = time.Second * 10
 			duration = time.Second * 10
@@ -47,7 +49,7 @@ var _ = Describe("ImmutableImages Controller", func() {
 
 		typeNamespacedName := types.NamespacedName{
 			Name:      resourceName,
-			Namespace: testNamespace, // TODO(user):Modify as needed
+			Namespace: testNamespace,
 		}
 		immutableimages := &batchv1.ImmutableImages{}
 
@@ -73,7 +75,6 @@ var _ = Describe("ImmutableImages Controller", func() {
 		})
 
 		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
 			resource := &batchv1.ImmutableImages{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
 			Expect(err).NotTo(HaveOccurred())
@@ -81,33 +82,32 @@ var _ = Describe("ImmutableImages Controller", func() {
 			By("Cleanup the specific resource instance ImmutableImages")
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 		})
-		It("should successfully reconcile the resource", func() {
+		It("should make all relevant secrets immutable", func() {
+			By("By creating multiple secrets")
+			var secretList, createdSecretList [numSecrets]corev1.Secret
+			for i := range numSecrets {
+				ctx := context.Background()
+				secretList[i] = corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testSecretName + fmt.Sprint(i),
+						Namespace: testNamespace,
+					},
+					Type: "Opaque",
+				}
+				Expect(k8sClient.Create(ctx, &secretList[i])).To(Succeed())
 
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+				secretLookupKey := types.NamespacedName{Name: testSecretName + fmt.Sprint(i), Namespace: testNamespace}
 
-			By("By creating a new Secret")
-			ctx := context.Background()
-			testSecret := &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testSecretName,
-					Namespace: testNamespace,
-				},
-				Type: "Opaque",
+				Eventually(func(g Gomega) {
+					g.Expect(k8sClient.Get(ctx, secretLookupKey, &createdSecretList[i])).To(Succeed())
+				}, timeout, interval).Should(Succeed())
+
 			}
-			Expect(k8sClient.Create(ctx, testSecret)).To(Succeed())
 
-			secretLookupKey := types.NamespacedName{Name: testSecretName, Namespace: testNamespace}
-			createdSecret := &corev1.Secret{}
-
-			Eventually(func(g Gomega) {
-				g.Expect(k8sClient.Get(ctx, secretLookupKey, createdSecret)).To(Succeed())
-			}, timeout, interval).Should(Succeed())
-
-			By("By creating a new Pod")
+			By("By creating a new Pod utilising all those secrets in various ways")
 			testPod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
+					Name:      "multiple-secret-pod",
 					Namespace: testNamespace,
 				},
 				Spec: corev1.PodSpec{
@@ -116,7 +116,7 @@ var _ = Describe("ImmutableImages Controller", func() {
 							Name: "credentials",
 							VolumeSource: corev1.VolumeSource{
 								Secret: &corev1.SecretVolumeSource{
-									SecretName: testSecretName,
+									SecretName: testSecretName + "0",
 								},
 							},
 						},
@@ -124,7 +124,7 @@ var _ = Describe("ImmutableImages Controller", func() {
 					Containers: []corev1.Container{
 						{
 							Name:  "secret-container",
-							Image: "alpine:latest",
+							Image: "nginx:0.3",
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:      "credentials",
@@ -133,12 +133,49 @@ var _ = Describe("ImmutableImages Controller", func() {
 								},
 							},
 						},
+						{
+							Name:  "envvar-container",
+							Image: "alpine:edge",
+							Env: []corev1.EnvVar{
+								{
+									Name: "secret-username",
+									ValueFrom: &corev1.EnvVarSource{
+										SecretKeyRef: &corev1.SecretKeySelector{
+											Key: "secretKeyRef-key",
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: testSecretName + "1",
+											},
+										},
+									},
+								},
+							},
+						},
+						{
+							Name:  "envfrom-container",
+							Image: "alpine:latest",
+							EnvFrom: []corev1.EnvFromSource{
+								{
+									SecretRef: &corev1.SecretEnvSource{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: testSecretName + "2",
+										},
+									},
+								},
+								{
+									SecretRef: &corev1.SecretEnvSource{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: testSecretName + "3", // FIXME Get panics for non-existent secret
+										},
+									},
+								},
+							},
+						},
 					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, testPod)).To(Succeed())
 
-			podLookupKey := types.NamespacedName{Name: "test-pod", Namespace: testNamespace}
+			podLookupKey := types.NamespacedName{Name: "multiple-secret-pod", Namespace: testNamespace}
 			createdPod := &corev1.Pod{}
 
 			Eventually(func(g Gomega) {
@@ -156,12 +193,18 @@ var _ = Describe("ImmutableImages Controller", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Checking that the attached secret is immutable")
+			By("Checking that the correct secrets are immutable")
 			Eventually(func(g Gomega) {
-				g.Expect(k8sClient.Get(ctx, secretLookupKey, createdSecret)).To(Succeed(), "should GET the Secret")
-				g.Expect(createdSecret.Immutable).To(HaveValue(Equal(true)), "secret should be Immutable") // Equal does strict type check, hance HaveValue
+				for i := range numSecrets {
+					secretLookupKey := types.NamespacedName{Name: testSecretName + fmt.Sprint(i), Namespace: testNamespace}
+					g.Expect(k8sClient.Get(ctx, secretLookupKey, &createdSecretList[i])).To(Succeed(), "should GET the Secret")
+					if i == 1 { // alpine:edge
+						g.Expect(createdSecretList[i].Immutable).To(BeNil(), "Immutable should not be set")
+					} else {
+						g.Expect(createdSecretList[i].Immutable).To(HaveValue(Equal(true)), "secret should be Immutable") // Equal does strict type check, hance HaveValue
+					}
+				}
 			}, timeout, interval).Should(Succeed(), "should attach our secret to the pod")
-
 		})
 	})
 })
