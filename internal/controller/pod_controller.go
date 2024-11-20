@@ -106,6 +106,7 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	}
 
 	// Ref: https://stackoverflow.com/questions/46406596/how-to-identify-unused-secrets-in-kubernetes
+	// Ref: https://kubernetes.io/docs/tasks/inject-data-application/distribute-credentials-secure/
 	for _, container := range pod.Spec.Containers {
 		// pod.Containers.Env.ValueFrom.SecretKeyRef.Name
 		for _, env := range container.Env {

@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -29,7 +30,6 @@ import (
 
 var _ = Describe("Pod Controller", func() {
 	const (
-		PodName        = "test-pod"
 		TestNamespace  = "default"
 		TestSecretName = "test-secret"
 
@@ -71,7 +71,7 @@ var _ = Describe("Pod Controller", func() {
 			By("By creating a new Pod")
 			testPod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      PodName,
+					Name:      "test-pod",
 					Namespace: TestNamespace,
 				},
 				Spec: corev1.PodSpec{
@@ -95,7 +95,7 @@ var _ = Describe("Pod Controller", func() {
 			}
 			Expect(k8sClient.Create(ctx, testPod)).To(Succeed())
 
-			podLookupKey := types.NamespacedName{Name: PodName, Namespace: TestNamespace}
+			podLookupKey := types.NamespacedName{Name: "test-pod", Namespace: TestNamespace}
 			createdPod := &corev1.Pod{}
 
 			Eventually(func(g Gomega) {
@@ -108,6 +108,109 @@ var _ = Describe("Pod Controller", func() {
 				g.Expect(k8sClient.Get(ctx, secretLookupKey, createdSecret)).To(Succeed(), "should GET the Secret")
 				g.Expect(createdPod.Spec.Volumes[0].Secret.SecretName).To(Equal(createdSecret.Name), "secret should be attached")
 				g.Expect(createdSecret.Immutable).To(HaveValue(Equal(true)), "secret should be Immutable") // Equal does strict type check, hance HaveValue
+			}, timeout, interval).Should(Succeed(), "should attach our secret to the pod")
+		})
+	})
+
+	Context("When adding a pod having multiple kinds of secrets", func() {
+		It("should make them all immutable", func() {
+			By("By creating multiple secrets")
+			var secretList, createdSecretList [4]corev1.Secret
+			for i := range 4 {
+				ctx := context.Background()
+				secretList[i] = corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      TestSecretName + fmt.Sprint(i),
+						Namespace: TestNamespace,
+					},
+					Type: "Opaque",
+				}
+				Expect(k8sClient.Create(ctx, &secretList[i])).To(Succeed())
+
+				secretLookupKey := types.NamespacedName{Name: TestSecretName + fmt.Sprint(i), Namespace: TestNamespace}
+
+				Eventually(func(g Gomega) {
+					g.Expect(k8sClient.Get(ctx, secretLookupKey, &createdSecretList[i])).To(Succeed())
+				}, timeout, interval).Should(Succeed())
+
+			}
+
+			By("By creating a new Pod utilising all those secrets in various ways")
+			testPod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "multiple-secret-pod",
+					Namespace: TestNamespace,
+				},
+				Spec: corev1.PodSpec{
+					Volumes: []corev1.Volume{
+						{
+							Name: "credentials",
+							VolumeSource: corev1.VolumeSource{
+								Secret: &corev1.SecretVolumeSource{
+									SecretName: TestSecretName + "0",
+								},
+							},
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Name:  "secret-container",
+							Image: "alpine:latest",
+						},
+						{
+							Name:  "envvar-container",
+							Image: "alpine:latest",
+							Env: []corev1.EnvVar{
+								{
+									Name: "secret-username",
+									ValueFrom: &corev1.EnvVarSource{
+										SecretKeyRef: &corev1.SecretKeySelector{
+											Key: "secretKeyRef-key",
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: TestSecretName + "1",
+											},
+										},
+									},
+								},
+							},
+						},
+						{
+							Name:  "envfrom-container",
+							Image: "alpine:latest",
+							EnvFrom: []corev1.EnvFromSource{
+								{
+									SecretRef: &corev1.SecretEnvSource{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: TestSecretName + "2",
+										},
+									},
+								},
+							},
+						},
+					},
+					ImagePullSecrets: []corev1.LocalObjectReference{
+						{
+							Name: TestSecretName + "3",
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, testPod)).To(Succeed())
+
+			podLookupKey := types.NamespacedName{Name: "multiple-secret-pod", Namespace: TestNamespace}
+			createdPod := &corev1.Pod{}
+
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, podLookupKey, createdPod)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			By("Checking that the attached secrets are immutable")
+			Eventually(func(g Gomega) {
+				for i := range 4 {
+					secretLookupKey := types.NamespacedName{Name: TestSecretName + fmt.Sprint(i), Namespace: TestNamespace}
+					g.Expect(k8sClient.Get(ctx, secretLookupKey, &createdSecretList[i])).To(Succeed(), "should GET the Secret")
+					g.Expect(createdSecretList[i].Immutable).To(HaveValue(Equal(true)), "secret should be Immutable") // Equal does strict type check, hance HaveValue
+				}
 			}, timeout, interval).Should(Succeed(), "should attach our secret to the pod")
 		})
 	})
