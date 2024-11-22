@@ -34,9 +34,9 @@ import (
 var _ = Describe("ImmutableImages Controller", func() {
 	Context("When reconciling a resource", func() {
 		const (
-			resourceName   = "test-resource-mul"
+			resourceName   = "test-resource-del"
 			testNamespace  = "default"
-			testSecretName = "test-secret"
+			testSecretName = "test-secrets"
 			numSecrets     = 4
 
 			timeout  = time.Second * 10
@@ -73,14 +73,14 @@ var _ = Describe("ImmutableImages Controller", func() {
 			}
 		})
 
-		AfterEach(func() {
-			resource := &batchv1.ImmutableImages{}
-			err := k8sClient.Get(ctx, typeNamespacedName, resource)
-			Expect(err).NotTo(HaveOccurred())
+		// AfterEach(func() {
+		// 	resource := &batchv1.ImmutableImages{}
+		// 	err := k8sClient.Get(ctx, typeNamespacedName, resource)
+		// 	Expect(err).NotTo(HaveOccurred())
 
-			By("Cleanup the specific resource instance ImmutableImages")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
-		})
+		// 	By("Cleanup the specific resource instance ImmutableImages")
+		// 	Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+		// })
 		It("should make all relevant secrets immutable", func() {
 			By("By creating multiple secrets")
 			var secretList, createdSecretList [numSecrets]corev1.Secret
@@ -106,7 +106,7 @@ var _ = Describe("ImmutableImages Controller", func() {
 			By("By creating a new Pod utilising all those secrets in various ways")
 			testPod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "multiple-secret-pod",
+					Name:      "multiple-secret-pod-d",
 					Namespace: testNamespace,
 				},
 				Spec: corev1.PodSpec{
@@ -163,7 +163,7 @@ var _ = Describe("ImmutableImages Controller", func() {
 								{
 									SecretRef: &corev1.SecretEnvSource{
 										LocalObjectReference: corev1.LocalObjectReference{
-											Name: testSecretName + "3", // FIXME Get panics for non-existent secret, maybe re-call reconcile after a while
+											Name: testSecretName + "3",
 										},
 									},
 								},
@@ -174,7 +174,7 @@ var _ = Describe("ImmutableImages Controller", func() {
 			}
 			Expect(k8sClient.Create(ctx, testPod)).To(Succeed())
 
-			podLookupKey := types.NamespacedName{Name: "multiple-secret-pod", Namespace: testNamespace}
+			podLookupKey := types.NamespacedName{Name: "multiple-secret-pod-d", Namespace: testNamespace}
 			createdPod := &corev1.Pod{}
 
 			Eventually(func(g Gomega) {
@@ -187,10 +187,28 @@ var _ = Describe("ImmutableImages Controller", func() {
 					secretLookupKey := types.NamespacedName{Name: testSecretName + fmt.Sprint(i), Namespace: testNamespace}
 					g.Expect(k8sClient.Get(ctx, secretLookupKey, &createdSecretList[i])).To(Succeed(), "should GET the Secret")
 					if i == 1 { // alpine:edge
-						g.Expect(createdSecretList[i].Immutable).To(BeNil(), "Immutable should not be set")
+						g.Expect(createdSecretList[i].Immutable).To(BeNil(), "Immutable should not be set for %s", createdSecretList[i].Name)
 					} else {
-						g.Expect(createdSecretList[i].Immutable).To(HaveValue(Equal(true)), "secret should be Immutable") // Equal does strict type check, hance HaveValue
+						g.Expect(createdSecretList[i].Immutable).To(HaveValue(Equal(true)), "secret should be Immutable for %s", createdSecretList[i].Name) // Equal does strict type check, hance HaveValue
 					}
+				}
+			}, timeout, interval).Should(Succeed(), "should attach our secret to the pod")
+
+			By("Deleting the created resource")
+			resource := &batchv1.ImmutableImages{}
+			err := k8sClient.Get(ctx, typeNamespacedName, resource)
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			By("Checking that the secrets are mutable again")
+			Eventually(func(g Gomega) {
+				for i := range numSecrets {
+					secretLookupKey := types.NamespacedName{Name: testSecretName + fmt.Sprint(i), Namespace: testNamespace}
+					g.Expect(k8sClient.Get(ctx, secretLookupKey, &createdSecretList[i])).To(Succeed(), "should GET the Secret")
+					g.Expect(createdSecretList[i].Immutable).To(BeNil(), "Immutable should not be set for %s", createdSecretList[i].Name)
 				}
 			}, timeout, interval).Should(Succeed(), "should attach our secret to the pod")
 		})

@@ -24,7 +24,6 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	batchv1 "github.com/brongulus/secret-controller/api/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -34,7 +33,7 @@ import (
 var _ = Describe("ImmutableImages Controller", func() {
 	Context("When reconciling a resource", func() {
 		const (
-			resourceName   = "test-resource-3"
+			resourceName   = "test-resource-podwatch"
 			testNamespace  = "default"
 			testSecretName = "test-secret"
 
@@ -162,17 +161,6 @@ var _ = Describe("ImmutableImages Controller", func() {
 				g.Expect(k8sClient.Get(ctx, podLookupKey, createdPod)).To(Succeed())
 			}, timeout, interval).Should(Succeed())
 
-			By("Reconciling the created resource")
-			controllerReconciler := &ImmutableImagesReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
-			}
-
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
-			})
-			Expect(err).NotTo(HaveOccurred())
-
 			By("By creating a second Pod")
 			testPod2 := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -213,17 +201,6 @@ var _ = Describe("ImmutableImages Controller", func() {
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, podLookupKey, createdPod2)).To(Succeed())
 			}, timeout, interval).Should(Succeed())
-
-			By("Reconciling the created resource")
-			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
-			})
-			Expect(err).NotTo(HaveOccurred())
-
-			// By("Deleting the created resource")
-			// Eventually(func(g Gomega) {
-			// 	g.Expect(k8sClient.Delete(ctx, createdPod2)).To(Succeed())
-			// }, timeout, interval).Should(Succeed())
 
 			By("Checking that the attached secret is immutable")
 			Eventually(func(g Gomega) {
