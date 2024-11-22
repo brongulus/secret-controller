@@ -64,9 +64,9 @@ var _ = Describe("ImmutableImages Controller", func() {
 					},
 					// TODO(user): Specify other spec details if needed.
 					Spec: batchv1.ImmutableImagesSpec{
-						Images: []string{
-							"alpine:latest",
-							"nginx:0.3",
+						ImageSecretsMap: map[string][]string{
+							"alpine:latest": {},
+							"nginx:0.3":     {},
 						},
 					},
 				}

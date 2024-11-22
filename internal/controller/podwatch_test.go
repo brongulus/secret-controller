@@ -34,9 +34,9 @@ import (
 var _ = Describe("ImmutableImages Controller", func() {
 	Context("When reconciling a resource", func() {
 		const (
-			resourceName   = "test-resource-2"
+			resourceName   = "test-resource-3"
 			testNamespace  = "default"
-			testSecretName = "test-secret-standalone"
+			testSecretName = "test-secret"
 
 			timeout  = time.Second * 10
 			duration = time.Second * 10
@@ -104,10 +104,27 @@ var _ = Describe("ImmutableImages Controller", func() {
 				g.Expect(k8sClient.Get(ctx, secretLookupKey, createdSecret)).To(Succeed())
 			}, timeout, interval).Should(Succeed())
 
+			By("By creating another Secret")
+			testSecret2 := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testSecretName + "22",
+					Namespace: testNamespace,
+				},
+				Type: "Opaque",
+			}
+			Expect(k8sClient.Create(ctx, testSecret2)).To(Succeed())
+
+			secretLookupKey2 := types.NamespacedName{Name: testSecretName + "22", Namespace: testNamespace}
+			createdSecret2 := &corev1.Secret{}
+
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, secretLookupKey2, createdSecret2)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
 			By("By creating a new Pod")
 			testPod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod-standalone",
+					Name:      "test-pod",
 					Namespace: testNamespace,
 				},
 				Spec: corev1.PodSpec{
@@ -138,7 +155,7 @@ var _ = Describe("ImmutableImages Controller", func() {
 			}
 			Expect(k8sClient.Create(ctx, testPod)).To(Succeed())
 
-			podLookupKey := types.NamespacedName{Name: "test-pod-standalone", Namespace: testNamespace}
+			podLookupKey := types.NamespacedName{Name: "test-pod", Namespace: testNamespace}
 			createdPod := &corev1.Pod{}
 
 			Eventually(func(g Gomega) {
@@ -156,10 +173,64 @@ var _ = Describe("ImmutableImages Controller", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
+			By("By creating a second Pod")
+			testPod2 := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod-2",
+					Namespace: testNamespace,
+				},
+				Spec: corev1.PodSpec{
+					Volumes: []corev1.Volume{
+						{
+							Name: "credentials",
+							VolumeSource: corev1.VolumeSource{
+								Secret: &corev1.SecretVolumeSource{
+									SecretName: testSecretName + "22",
+								},
+							},
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Name:  "secret-container",
+							Image: "alpine:latest",
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "credentials",
+									MountPath: "/etc/credentials",
+									ReadOnly:  true,
+								},
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, testPod2)).To(Succeed())
+
+			podLookupKey = types.NamespacedName{Name: "test-pod-2", Namespace: testNamespace}
+			createdPod2 := &corev1.Pod{}
+
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, podLookupKey, createdPod2)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			By("Reconciling the created resource")
+			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// By("Deleting the created resource")
+			// Eventually(func(g Gomega) {
+			// 	g.Expect(k8sClient.Delete(ctx, createdPod2)).To(Succeed())
+			// }, timeout, interval).Should(Succeed())
+
 			By("Checking that the attached secret is immutable")
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, secretLookupKey, createdSecret)).To(Succeed(), "should GET the Secret")
 				g.Expect(createdSecret.Immutable).To(HaveValue(Equal(true)), "secret should be Immutable") // Equal does strict type check, hance HaveValue
+				g.Expect(k8sClient.Get(ctx, secretLookupKey2, createdSecret2)).To(Succeed(), "should GET the Secret")
+				g.Expect(createdSecret2.Immutable).To(HaveValue(Equal(true)), "secret should be Immutable") // Equal does strict type check, hance HaveValue
 			}, timeout, interval).Should(Succeed(), "should attach our secret to the pod")
 
 		})

@@ -3,6 +3,8 @@ kind: ImmutableImages
 metadata:
   name: immutable-secret-image-list
 spec:
-  images:
-  - "alpine:latest"
-  - "nginx:0.3"
+  imageSecretMap:
+    'alpine:latest' :
+    - ""
+    'nginx:0.3' :
+    - ""

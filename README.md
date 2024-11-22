@@ -1,11 +1,10 @@
 # secret-controller
-// TODO(user): Add simple overview of use/purpose
+The controller works by adding immutability to all the secrets that are currently being used by pods however it restricts it to a set of images that are specified by the ImmutableImages custom resource.
+
+Upon any updates to to ImmutableImages or creation of a new pod, the reconciliation occurs, it looks for all the new secrets that should be marked as immutable by looking for the various ways in which a secret is attached to containers.
 
 ## TODOs
-- FIXME pod watching (creation should trigger reconcile) is not happening at all!
 - Check when secret is deleted and a pod is created that refers it (secret Get failure)
-- imageList deletion/Get failure should remove the secrets from webhook blacklist?
-- Look for deletion (finalizer)
 - Add namespace to the CR as well
 - Validating Webhook (list of immutable secrets in CR status, on removal of image from the list, update the secret list), webhook implements the immutability indirectly to not have to resort to deletion of secrets and pods.
 

@@ -21,12 +21,16 @@ import (
 	"fmt"
 	"slices"
 
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	batchv1 "github.com/brongulus/secret-controller/api/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -45,7 +49,7 @@ type ImmutableImagesReconciler struct {
 // Sets the immutable field for the given secret as true
 func (r *ImmutableImagesReconciler) tagSecretAsImmutable(ctx context.Context, req ctrl.Request, secretName string) (string, error) {
 	log := log.FromContext(ctx)
-	log.V(1).Info(secretName)
+	// log.V(1).Info(secretName)
 
 	// Get Secret
 	secret := &corev1.Secret{}
@@ -66,34 +70,63 @@ func (r *ImmutableImagesReconciler) tagSecretAsImmutable(ctx context.Context, re
 			log.Error(err, "Could not update secret")
 			return secretName, err
 		}
-		log.V(1).Info("Secret is made immutable")
+		fmt.Println("Secret is made immutable")
 	} else {
-		log.V(1).Info("Secret is already set")
+		fmt.Println("Secret is already set")
 	}
 	// Return
 	return secretName, nil
 }
 
+func (r *ImmutableImagesReconciler) addSecretToImageMap(ctx context.Context, images *batchv1.ImmutableImages, imageName, secretName string) error {
+	// log := log.FromContext(ctx)
+	// if !slices.Contains(images.Status.ImmutableSecrets, secretName) {
+	// 	images.Status.ImmutableSecrets = append(images.Status.ImmutableSecrets, secretName)
+	// 	log.V(1).Info(fmt.Sprintf("Adding secret %s to status", secretName))
+	// }
+
+	if _, found := images.Spec.ImageSecretsMap[imageName]; found {
+		if !slices.Contains(images.Spec.ImageSecretsMap[imageName], secretName) {
+			fmt.Printf("Adding secret %s to status\n", secretName)
+			images.Spec.ImageSecretsMap[imageName] = append(images.Spec.ImageSecretsMap[imageName], secretName)
+		}
+	}
+	return nil
+}
+
 // Checks if there are secrets for the pod satisfying the
 // immutableimage criteria, returns their set
-func (r *ImmutableImagesReconciler) fetchPodSecrets(imageList batchv1.ImmutableImages, pod corev1.Pod) (sets.Set[string], error) {
+func (r *ImmutableImagesReconciler) fetchPodSecrets(ctx context.Context, images *batchv1.ImmutableImages, pod *corev1.Pod) (sets.Set[string], error) {
+	// log := log.FromContext(ctx)
 	secretList := sets.New[string]()
 
 	// pod.Volumes.Secret.SecretName
 	for _, volume := range pod.Spec.Volumes {
 		if volume.Secret != nil {
-			// Check if the particular volume has an associated immutable image
+			// FIXME Check if the particular volume has an associated immutable image
+			imageName := ""
 			hasImmutableImage := slices.ContainsFunc(pod.Spec.Containers, func(container corev1.Container) bool {
 				for _, mount := range container.VolumeMounts {
 					if mount.Name == volume.Name {
-						return slices.Contains(imageList.Spec.Images, container.Image)
+						// log.V(1).Info(mount.Name)
+						// log.V(1).Info(container.Image)
+						// Check if image is part of immutable map
+						if _, found := images.Spec.ImageSecretsMap[container.Image]; found {
+							// log.V(1).Info(container.Image)
+							imageName = container.Image
+							return true
+						}
 					}
 				}
 				return false
 			})
 			// log.V(1).Info(fmt.Sprint(hasImmutableImage))
 			if hasImmutableImage {
-				secretList.Insert(volume.Secret.SecretName)
+				secretName := volume.Secret.SecretName
+				secretList.Insert(secretName)
+				if err := r.addSecretToImageMap(ctx, images, imageName, secretName); err != nil {
+					return secretList, err
+				}
 			}
 		}
 	}
@@ -101,17 +134,27 @@ func (r *ImmutableImagesReconciler) fetchPodSecrets(imageList batchv1.ImmutableI
 	// Ref: https://stackoverflow.com/questions/46406596/how-to-identify-unused-secrets-in-kubernetes
 	// Ref: https://kubernetes.io/docs/tasks/inject-data-application/distribute-credentials-secure/
 	for _, container := range pod.Spec.Containers {
-		hasImmutableImage := slices.Contains(imageList.Spec.Images, container.Image)
+		// Check if image is part of immutable map
+		_, hasImmutableImage := images.Spec.ImageSecretsMap[container.Image]
+		imageName := container.Image
 		// pod.Containers.Env.ValueFrom.SecretKeyRef.Name
 		for _, env := range container.Env {
 			if env.ValueFrom != nil && env.ValueFrom.SecretKeyRef != nil && hasImmutableImage {
-				secretList.Insert(env.ValueFrom.SecretKeyRef.Name)
+				secretName := env.ValueFrom.SecretKeyRef.Name
+				secretList.Insert(secretName)
+				if err := r.addSecretToImageMap(ctx, images, imageName, secretName); err != nil {
+					return secretList, err
+				}
 			}
 		}
 		// pod.Containers.EnvFrom.SecretRef.Name
 		for _, envFrom := range container.EnvFrom {
 			if envFrom.SecretRef != nil && hasImmutableImage {
-				secretList.Insert(envFrom.SecretRef.Name)
+				secretName := envFrom.SecretRef.Name
+				secretList.Insert(secretName)
+				if err := r.addSecretToImageMap(ctx, images, imageName, secretName); err != nil {
+					return secretList, err
+				}
 			}
 		}
 	}
@@ -131,37 +174,80 @@ func (r *ImmutableImagesReconciler) fetchPodSecrets(imageList batchv1.ImmutableI
 func (r *ImmutableImagesReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
-	var imageList batchv1.ImmutableImages
-	if err := r.Get(ctx, req.NamespacedName, &imageList); err != nil {
-		log.Error(err, "Could not fetch imagelist")
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+	log.V(1).Info("Inside reconcile <<<")
+	images := &batchv1.ImmutableImages{}
+	// pod := &corev1.Pod{}
+	// // TODO: Check if namespace is not kube-system etc
+	// if req.Namespace == "kube-system" || req.Namespace == "local-path-storage" {
+	// 	return ctrl.Result{}, nil
+	// }
+
+	if err := r.Get(ctx, req.NamespacedName, images); err != nil {
+		if !errors.IsNotFound(err) {
+			log.Error(err, "Could not fetch imagelist")
+			return ctrl.Result{}, err
+		}
+		log.Info("Ignoring not found since imagelist is deleted")
+		return ctrl.Result{}, nil
+	}
+	// TODO: Updates to the CR
+
+	// CR deletion
+	imageFinalizer := "batch.github.com/finalizer"
+	// Check if the object is being deleted
+	if images.GetDeletionTimestamp().IsZero() {
+		if !controllerutil.ContainsFinalizer(images, imageFinalizer) {
+			controllerutil.AddFinalizer(images, imageFinalizer)
+			if err := r.Update(ctx, images); err != nil {
+				return ctrl.Result{}, err
+			}
+			// log.V(1).Info("finalizer added ===")
+		}
+	} else {
+		// Object being deleted
+		if controllerutil.ContainsFinalizer(images, imageFinalizer) {
+			// our finalizer is present, so lets handle any external dependency
+			fmt.Println("=== CR has finalizer")
+			// if res, err := r.removeImmutableRestartSecret(ctx, req, images); err != nil {
+			// 	return res, err
+			// }
+
+			// remove our finalizer from the list and update it.
+			controllerutil.RemoveFinalizer(images, imageFinalizer)
+			// FIXME
+			if err := r.Update(ctx, images); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+		// Stop reconciliation as the item is being deleted
+		return ctrl.Result{}, nil
 	}
 
-	// FIXME: watch pod? fix GET call
 	podList := &corev1.PodList{}
 	if err := r.List(ctx, podList, client.InNamespace(req.Namespace)); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to list pods: %w", err)
 	}
 
 	for _, pod := range podList.Items {
-		// TODO: Check if namespace is not kube-system etc
-		if req.Namespace == "kube-system" || req.Namespace == "local-path-storage" {
-			return ctrl.Result{}, nil
-		}
-
-		log.Info(pod.Name)
+		// Reconcile
+		fmt.Printf("Pod is %s\n", pod.Name)
 
 		// Get list of all the secrets attached to a pod
-		secretList, err := r.fetchPodSecrets(imageList, pod)
+		secretList, err := r.fetchPodSecrets(ctx, images, &pod)
+		// log.V(1).Info(fmt.Sprint(secretList))
 		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to get secrets: %w", err)
+			return ctrl.Result{}, fmt.Errorf("failed to get pod secrets: %w", err)
+		}
+		if err := r.Update(ctx, images); err != nil { // FIXME
+			log.Error(err, "Could not update immutable secret list")
+			return ctrl.Result{}, err
 		}
 
 		// Tag each secret as immutable
 		for secret := range secretList {
-			// log.V(1).Info(fmt.Sprint(secret))
+			fmt.Printf("Secret is %s\n", secret)
 
-			// FIXME: Is it an issue if early return happens i.e.
+			// DONE: Is it an issue if early return happens i.e.
 			// it errors out while only tagging one secret and the
 			// rest aren't updated? Maybe call reconcile again
 			_, err := r.tagSecretAsImmutable(ctx, req, secret)
@@ -170,15 +256,83 @@ func (r *ImmutableImagesReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			}
 		}
 	}
-	// log.V(1).Info("Reconcile Over")
+	log.V(1).Info(">>> Reconcile Over")
 	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ImmutableImagesReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&batchv1.ImmutableImages{}). // TODO: add pod watcher
-
+		For(&batchv1.ImmutableImages{}).
+		Watches(
+			&corev1.Pod{}, // Ref: https://squiggly.dev/2023/07/enqueue-your-father-was-a-mapfunc/
+			handler.EnqueueRequestsFromMapFunc(
+				func(ctx context.Context, obj client.Object) []reconcile.Request {
+					pod := obj.(*corev1.Pod)
+					// Get all images in pod namespace and create a request for them
+					var immutableList batchv1.ImmutableImagesList
+					if err := r.List(ctx, &immutableList, client.InNamespace(pod.Namespace)); err != nil {
+						return nil
+					}
+					var requests []reconcile.Request
+					for _, immutable := range immutableList.Items {
+						requests = append(requests, reconcile.Request{
+							NamespacedName: types.NamespacedName{
+								Name:      immutable.Name,
+								Namespace: pod.Namespace,
+							},
+						})
+					}
+					return requests
+				},
+			),
+		).
 		Named("immutableimages").
 		Complete(r)
 }
+
+// func (r *ImmutableImagesReconciler) removeImmutableRestartSecret(ctx context.Context, req ctrl.Request, images *batchv1.ImmutableImages) (ctrl.Result, error) {
+// 	log := log.FromContext(ctx)
+// 	// TODO figure out update logic
+// 	for _, image := range images.Spec.ImageSecretsMap {
+// 		for _, secretName := range image {
+// 			if secretName == "" {
+// 				continue
+// 			}
+// 			immutableSecret := &corev1.Secret{}
+// 			secretNamespacedName := types.NamespacedName{
+// 				Name:      secretName,
+// 				Namespace: req.Namespace,
+// 			}
+// 			if err := r.Get(ctx, secretNamespacedName, immutableSecret); err != nil { // FIXME
+// 				log.Error(err, "Could not fetch secret")
+// 				return ctrl.Result{}, client.IgnoreNotFound(err)
+// 			}
+// 			if immutableSecret.Immutable == nil || *immutableSecret.Immutable != true {
+// 				log.Info("Immutable secret is not marked as immutable!")
+// 				return ctrl.Result{}, nil
+// 			}
+
+// 			updatedSecret := immutableSecret.DeepCopy()
+// 			updatedSecret.Immutable = nil
+
+// 			if err := r.Delete(ctx, immutableSecret); err != nil {
+// 				if !errors.IsNotFound(err) {
+// 					return ctrl.Result{}, err
+// 				}
+// 			}
+// 			log.Info(fmt.Sprintf("Immutable secret %s is deleted", secretName))
+// 			time.Sleep(2 * time.Second)
+
+// 			if err := r.Create(ctx, updatedSecret); err != nil {
+// 				if errors.IsAlreadyExists(err) {
+// 					return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, nil
+// 				}
+// 				return ctrl.Result{}, err
+// 			}
+// 			log.Info(fmt.Sprintf("Immutable secret %s is recreated as mutable", secretName))
+// 		}
+// 	}
+
+// 	return ctrl.Result{}, nil
+// }

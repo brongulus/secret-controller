@@ -39,15 +39,25 @@ spec:
           spec:
             description: ImmutableImagesSpec defines the desired state of ImmutableImages.
             properties:
-              images:
+              imageSecretMap:
+                additionalProperties:
+                  items:
+                    type: string
+                  type: array
                 description: Image is an example field of ImmutableImages. Edit immutableimages_types.go
                   to remove/update
-                items:
-                  type: string
-                type: array
+                type: object
             type: object
           status:
             description: ImmutableImagesStatus defines the observed state of ImmutableImages.
+            properties:
+              immutableSecrets:
+                description: |-
+                  INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
+                  Important: Run "make" to regenerate code after modifying this file
+                items:
+                  type: string
+                type: array
             type: object
         type: object
     served: true
