@@ -58,8 +58,12 @@ func (r *ImmutableImagesReconciler) tagSecretAsImmutable(ctx context.Context, re
 		Namespace: req.Namespace,
 	}
 	if err := r.Get(ctx, secretNamespacedName, secret); err != nil {
-		log.Error(err, "Could not fetch secret")
-		return secretName, client.IgnoreNotFound(err)
+		if !errors.IsNotFound(err) {
+			log.Error(err, "Could not fetch secret")
+			return secretName, err
+		}
+		log.Info("Ignoring not found since secret is deleted")
+		return secretName, nil
 	}
 
 	// Tag Immutable if not

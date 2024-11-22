@@ -3,6 +3,12 @@ The controller works by adding immutability to all the secrets that are currentl
 
 Upon any updates to to ImmutableImages or creation of a new pod, the reconciliation occurs, it looks for all the new secrets that should be marked as immutable by looking for the various ways in which a secret is attached to containers.
 
+Preventing changes to the data of an existing Secret has the following benefits:
+- protects you from accidental (or unwanted) updates that could cause applications outages
+- improves cluster performance by reducing apiserver 
+
+Ref: [Secrets](https://kubernetes.io/docs/concepts/configuration/secret/#secret-immutable)
+
 ## TODOs
 - Check when secret is deleted and a pod is created that refers it (secret Get failure)
 - Add namespace to the CR as well
