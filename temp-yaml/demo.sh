@@ -55,6 +55,44 @@ echo "kubectl get secrets secret-added-later -o yaml | grep immutable"
 kubectl get secrets secret-added-later -o yaml | grep immutable
 echo "----------------------------"
 
+
+read -p "delete custom resource?(y/n)" yn
+case $yn in 
+	  y ) echo "Check which secrets added to imagemap";
+        echo "kubectl get immutableimages.batch.github.com immutable-secret-image-list -o jsonpath='{.spec.imageSecretMap}'";
+        kubectl get immutableimages.batch.github.com immutable-secret-image-list \
+                -o jsonpath='{.spec.imageSecretMap}';
+        printf "\n----------------------------\n";
+        echo Deleting;
+          kubectl delete immutableimages.batch.github.com immutable-secret-image-list;;
+	  n ) echo Not deleting CR...;;
+	  * ) echo invalid response;
+		    exit 1;;
+esac
+
+echo "----------------------------"
+echo "Immutable should be gone from the secrets"
+echo "----------------------------"
+
+echo "kubectl get secrets secret-1 -o yaml | grep immutable"
+kubectl get secrets secret-1 -o yaml | grep immutable
+echo "----------------------------"
+
+echo "kubectl get secrets secret-2 -o yaml | grep immutable"
+kubectl get secrets secret-2 -o yaml | grep immutable
+echo "----------------------------"
+
+echo "kubectl get secrets secret-added-later -o yaml | grep immutable"
+kubectl get secrets secret-added-later -o yaml | grep immutable
+echo "----------------------------"
+
+
+
+
+
+
+
+
 read -p "delete all resources?(y/n)" yn
 
 

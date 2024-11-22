@@ -9,13 +9,13 @@ Preventing changes to the data of an existing Secret has the following benefits:
 
 Ref: [Secrets](https://kubernetes.io/docs/concepts/configuration/secret/#secret-immutable)
 
-## TODOs
+## TODOs 
+- Check if it's possible to edit the secret from the pod itself!
+- Remove statefulness from the CR to allow for updates to the list
+Think about doing it without the map somehow (if the status thing happens, what we can do is every reconcile, create the spec and status, so that there's no state to keep track of)
 - Check when secret is deleted and a pod is created that refers it (secret Get failure)
 - Add namespace to the CR as well
-- Validating Webhook (list of immutable secrets in CR status, on removal of image from the list, update the secret list), webhook implements the immutability indirectly to not have to resort to deletion of secrets and pods.
-
-## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+- Validating Webhook (list of immutable secrets in CR status, on removal of image from the list, update the secret list, annotation?), webhook implements the immutability indirectly to not have to resort to deletion of secrets and pods.
 
 ## Getting Started
 
