@@ -34,6 +34,7 @@ import (
 
 	batchv1 "github.com/brongulus/secret-controller/api/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // ImmutableImagesReconciler reconciles a ImmutableImages object
@@ -112,11 +113,8 @@ func (r *ImmutableImagesReconciler) fetchPodSecrets(ctx context.Context, images 
 			hasImmutableImage := slices.ContainsFunc(pod.Spec.Containers, func(container corev1.Container) bool {
 				for _, mount := range container.VolumeMounts {
 					if mount.Name == volume.Name {
-						// log.V(1).Info(mount.Name)
-						// log.V(1).Info(container.Image)
 						// Check if image is part of immutable map
 						if _, found := images.Spec.ImageSecretsMap[container.Image]; found {
-							// log.V(1).Info(container.Image)
 							imageName = container.Image
 							return true
 						}
@@ -124,7 +122,6 @@ func (r *ImmutableImagesReconciler) fetchPodSecrets(ctx context.Context, images 
 				}
 				return false
 			})
-			// log.V(1).Info(fmt.Sprint(hasImmutableImage))
 			if hasImmutableImage {
 				secretName := volume.Secret.SecretName
 				secretList.Insert(secretName)
@@ -180,11 +177,6 @@ func (r *ImmutableImagesReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	log.V(1).Info("Inside reconcile <<<")
 	images := &batchv1.ImmutableImages{}
-	// pod := &corev1.Pod{}
-	// // TODO: Check if namespace is not kube-system etc
-	// if req.Namespace == "kube-system" || req.Namespace == "local-path-storage" {
-	// 	return ctrl.Result{}, nil
-	// }
 
 	if err := r.Get(ctx, req.NamespacedName, images); err != nil {
 		if !errors.IsNotFound(err) {
@@ -212,9 +204,9 @@ func (r *ImmutableImagesReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if controllerutil.ContainsFinalizer(images, imageFinalizer) {
 			// our finalizer is present, so lets handle any external dependency
 			fmt.Println("=== CR has finalizer")
-			// if res, err := r.removeImmutableRestartSecret(ctx, req, images); err != nil {
-			// 	return res, err
-			// }
+			if res, err := r.removeImmutableRestartSecret(ctx, req, images); err != nil {
+				return res, err
+			}
 
 			// remove our finalizer from the list and update it.
 			controllerutil.RemoveFinalizer(images, imageFinalizer)
@@ -238,7 +230,6 @@ func (r *ImmutableImagesReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 		// Get list of all the secrets attached to a pod
 		secretList, err := r.fetchPodSecrets(ctx, images, &pod)
-		// log.V(1).Info(fmt.Sprint(secretList))
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get pod secrets: %w", err)
 		}
@@ -295,48 +286,53 @@ func (r *ImmutableImagesReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-// func (r *ImmutableImagesReconciler) removeImmutableRestartSecret(ctx context.Context, req ctrl.Request, images *batchv1.ImmutableImages) (ctrl.Result, error) {
-// 	log := log.FromContext(ctx)
-// 	// TODO figure out update logic
-// 	for _, image := range images.Spec.ImageSecretsMap {
-// 		for _, secretName := range image {
-// 			if secretName == "" {
-// 				continue
-// 			}
-// 			immutableSecret := &corev1.Secret{}
-// 			secretNamespacedName := types.NamespacedName{
-// 				Name:      secretName,
-// 				Namespace: req.Namespace,
-// 			}
-// 			if err := r.Get(ctx, secretNamespacedName, immutableSecret); err != nil { // FIXME
-// 				log.Error(err, "Could not fetch secret")
-// 				return ctrl.Result{}, client.IgnoreNotFound(err)
-// 			}
-// 			if immutableSecret.Immutable == nil || *immutableSecret.Immutable != true {
-// 				log.Info("Immutable secret is not marked as immutable!")
-// 				return ctrl.Result{}, nil
-// 			}
+func (r *ImmutableImagesReconciler) removeImmutableRestartSecret(ctx context.Context, req ctrl.Request, images *batchv1.ImmutableImages) (ctrl.Result, error) {
+	log := log.FromContext(ctx)
+	// TODO figure out update logic
+	for _, image := range images.Spec.ImageSecretsMap {
+		for _, secretName := range image {
+			if secretName == "" {
+				continue
+			}
+			immutableSecret := &corev1.Secret{}
+			secretNamespacedName := types.NamespacedName{
+				Name:      secretName,
+				Namespace: req.Namespace,
+			}
+			if err := r.Get(ctx, secretNamespacedName, immutableSecret); err != nil { // FIXME
+				log.Error(err, "Could not fetch secret")
+				return ctrl.Result{}, client.IgnoreNotFound(err)
+			}
+			if immutableSecret.Immutable == nil || *immutableSecret.Immutable != true {
+				log.Info("Immutable secret is not marked as immutable!")
+				return ctrl.Result{}, nil
+			}
 
-// 			updatedSecret := immutableSecret.DeepCopy()
-// 			updatedSecret.Immutable = nil
+			// FIXME: Look for the webhook approach compared to secret re-creation
+			updatedSecret := immutableSecret.DeepCopy()
+			updatedSecret.Immutable = nil
+			updatedSecret.ObjectMeta = metav1.ObjectMeta{
+				Name:        immutableSecret.Name,
+				Namespace:   immutableSecret.Namespace,
+				Labels:      immutableSecret.Labels,
+				Annotations: immutableSecret.Annotations,
+				// OwnerReferences: immutableSecret.OwnerReferences,
+				// Finalizers:      immutableSecret.Finalizers,
+			}
 
-// 			if err := r.Delete(ctx, immutableSecret); err != nil {
-// 				if !errors.IsNotFound(err) {
-// 					return ctrl.Result{}, err
-// 				}
-// 			}
-// 			log.Info(fmt.Sprintf("Immutable secret %s is deleted", secretName))
-// 			time.Sleep(2 * time.Second)
+			if err := r.Delete(ctx, immutableSecret); err != nil {
+				if !errors.IsNotFound(err) {
+					return ctrl.Result{}, err
+				}
+			}
+			fmt.Printf("Immutable secret %s is deleted\n", secretName)
 
-// 			if err := r.Create(ctx, updatedSecret); err != nil {
-// 				if errors.IsAlreadyExists(err) {
-// 					return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, nil
-// 				}
-// 				return ctrl.Result{}, err
-// 			}
-// 			log.Info(fmt.Sprintf("Immutable secret %s is recreated as mutable", secretName))
-// 		}
-// 	}
+			if err := r.Create(ctx, updatedSecret); err != nil {
+				return ctrl.Result{}, err
+			}
+			fmt.Printf("Immutable secret %s is recreated as mutable\n", secretName)
+		}
+	}
 
-// 	return ctrl.Result{}, nil
-// }
+	return ctrl.Result{}, nil
+}
