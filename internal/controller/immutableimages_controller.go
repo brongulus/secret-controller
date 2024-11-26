@@ -34,7 +34,6 @@ import (
 
 	batchv1 "github.com/brongulus/secret-controller/api/v1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // ImmutableImagesReconciler reconciles a ImmutableImages object
@@ -47,42 +46,7 @@ type ImmutableImagesReconciler struct {
 // +kubebuilder:rbac:groups=batch.github.com,resources=immutableimages/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=batch.github.com,resources=immutableimages/finalizers,verbs=update
 
-// Sets the immutable field for the given secret as true
-func (r *ImmutableImagesReconciler) tagSecretAsImmutable(ctx context.Context, req ctrl.Request, secretName string) (string, error) {
-	log := log.FromContext(ctx)
-	// log.V(1).Info(secretName)
-
-	// Get Secret
-	secret := &corev1.Secret{}
-	secretNamespacedName := types.NamespacedName{
-		Name:      secretName,
-		Namespace: req.Namespace,
-	}
-	if err := r.Get(ctx, secretNamespacedName, secret); err != nil {
-		if !errors.IsNotFound(err) {
-			log.Error(err, "Could not fetch secret")
-			return secretName, err
-		}
-		log.Info("Ignoring not found since secret is deleted or not created")
-		return secretName, nil
-	}
-
-	// Tag Immutable if not
-	if secret.Immutable == nil || *secret.Immutable != true {
-		shouldBeImmutable := true
-		secret.Immutable = &shouldBeImmutable
-		if err := r.Update(ctx, secret); err != nil {
-			log.Error(err, "Could not update secret")
-			return secretName, err
-		}
-		fmt.Println("Secret is made immutable")
-	} else {
-		fmt.Println("Secret is already set")
-	}
-	// Return
-	return secretName, nil
-}
-
+// Add the given secret to the immutableSecretsList
 func (r *ImmutableImagesReconciler) addSecretToImageMap(ctx context.Context, images *batchv1.ImmutableImages, imageName, secretName string) error {
 	// log := log.FromContext(ctx)
 	if !slices.Contains(images.Spec.ImmutableSecrets, secretName) {
@@ -100,7 +64,7 @@ func (r *ImmutableImagesReconciler) addSecretToImageMap(ctx context.Context, ima
 }
 
 // Checks if there are secrets for the pod satisfying the
-// immutableimage criteria, returns their set
+// immutableimage criteria, add to immutableSecretsList
 func (r *ImmutableImagesReconciler) fetchPodSecrets(ctx context.Context, images *batchv1.ImmutableImages, pod *corev1.Pod) (sets.Set[string], error) {
 	// log := log.FromContext(ctx)
 	secretList := sets.New[string]()
@@ -241,14 +205,6 @@ func (r *ImmutableImagesReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// Tag each secret as immutable
 		for secret := range secretList {
 			fmt.Printf("Secret is %s\n", secret)
-
-			// DONE: Is it an issue if early return happens i.e.
-			// it errors out while only tagging one secret and the
-			// rest aren't updated? Maybe call reconcile again
-			// _, err := r.tagSecretAsImmutable(ctx, req, secret)
-			// if err != nil {
-			// 	return ctrl.Result{}, err
-			// }
 		}
 	}
 	log.V(1).Info(">>> Reconcile Over")
@@ -287,57 +243,6 @@ func (r *ImmutableImagesReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *ImmutableImagesReconciler) removeImmutableRestartSecret(ctx context.Context, req ctrl.Request, images *batchv1.ImmutableImages) error {
-	log := log.FromContext(ctx)
-	// TODO figure out update logic
-	for _, image := range images.Spec.ImageSecretsMap {
-		for _, secretName := range image {
-			if secretName == "" {
-				continue
-			}
-			immutableSecret := &corev1.Secret{}
-			secretNamespacedName := types.NamespacedName{
-				Name:      secretName,
-				Namespace: req.Namespace,
-			}
-			if err := r.Get(ctx, secretNamespacedName, immutableSecret); err != nil {
-				if !errors.IsNotFound(err) {
-					log.Error(err, "Could not fetch secret")
-					return err
-				}
-				log.Info("Ignoring not found since secret is deleted or not created")
-				return nil
-			}
-			if immutableSecret.Immutable == nil || *immutableSecret.Immutable != true {
-				log.Info("Immutable secret is not marked as immutable!")
-				return nil
-			}
-
-			// FIXME: Look for the webhook approach compared to secret re-creation
-			updatedSecret := immutableSecret.DeepCopy()
-			updatedSecret.Immutable = nil
-			updatedSecret.ObjectMeta = metav1.ObjectMeta{
-				Name:        immutableSecret.Name,
-				Namespace:   immutableSecret.Namespace,
-				Labels:      immutableSecret.Labels,
-				Annotations: immutableSecret.Annotations,
-				// OwnerReferences: immutableSecret.OwnerReferences,
-				// Finalizers:      immutableSecret.Finalizers,
-			}
-
-			if err := r.Delete(ctx, immutableSecret); err != nil {
-				if !errors.IsNotFound(err) {
-					return err
-				}
-			}
-			fmt.Printf("Immutable secret %s is deleted\n", secretName)
-
-			if err := r.Create(ctx, updatedSecret); err != nil {
-				return err
-			}
-			fmt.Printf("Immutable secret %s is recreated as mutable\n", secretName)
-		}
-	}
-
-	return nil
-}
+// func (r *ImmutableImagesReconciler) removeImmutableRestartSecret(ctx context.Context, req ctrl.Request, images *batchv1.ImmutableImages) error {
+// 	log := log.FromContext(ctx)
+// }
