@@ -29,14 +29,14 @@ type ImmutableImagesSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// Image is an example field of ImmutableImages. Edit immutableimages_types.go to remove/update
-	ImageSecretsMap map[string][]string `json:"imageSecretMap,omitempty"`
+	ImageSecretsMap  map[string][]string `json:"imageSecretMap,omitempty"`
+	ImmutableSecrets []string            `json:"immutableSecrets,omitempty"`
 }
 
 // ImmutableImagesStatus defines the observed state of ImmutableImages.
 type ImmutableImagesStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-	ImmutableSecrets []string `json:"immutableSecrets,omitempty"`
 }
 
 // +kubebuilder:object:root=true

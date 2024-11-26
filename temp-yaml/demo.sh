@@ -1,6 +1,7 @@
+# kubectl apply -f test-webhook.yaml
 kubectl apply -f 07d_demo_pod_with_secret.yaml -f 07c_demo_secret.yaml -f cr.yaml
 
-echo "All the pods, secrets and cr deployed"
+echo "All the pods, secrets, webhook and cr deployed"
 
 echo "Waiting for the reconciler to run for all pods and the cr..."
 
@@ -56,7 +57,7 @@ kubectl get secrets secret-added-later -o yaml | grep immutable
 echo "----------------------------"
 
 
-read -p "delete custom resource?(y/n)" yn
+read -p "delete custom resource?(y/n) " yn
 case $yn in 
 	  y ) echo "Check which secrets added to imagemap";
         echo "kubectl get immutableimages.batch.github.com immutable-secret-image-list -o jsonpath='{.spec.imageSecretMap}'";
@@ -93,7 +94,7 @@ echo "----------------------------"
 
 
 
-read -p "delete all resources?(y/n)" yn
+read -p "delete all resources?(y/n) " yn
 
 
 case $yn in 

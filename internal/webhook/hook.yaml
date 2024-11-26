@@ -1,0 +1,120 @@
+---
+# Everything in a namespace so I could just delete
+# it any time I needed
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: webhook-test
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: pod-mutating-webhook.jgaskins.dev
+  namespace: webhook-test
+  annotations:
+    # This is what tells CertManager to inject
+    # the `caBundle` for certs we generate below
+    cert-manager.io/inject-ca-from: webhook-test/pod-mutating-webhook
+webhooks:
+  - name: pod-mutating-webhook.jgaskins.dev
+    admissionReviewVersions: [v1]
+    rules:
+      # We want all pods in the cluster to be passed
+      # through this webhook just in case
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [secrets]
+    # If you're mutating Pod resources, you'll want to
+    # Uncomment this so if you screw up so you can
+    # deploy it again! This took a LOT of trial
+    # and error!
+    # failurePolicy: Ignore
+    clientConfig:
+      service:
+        namespace: webhook-test
+        name: pod-mutating-webhook
+        path: /pods
+        port: 3000
+    sideEffects: None
+---
+# The service we wire up to our webhook handler
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: webhook-test
+  name: pod-mutating-webhook
+spec:
+  selector:
+    app.kubernetes.io/name: pod-mutating-webhook
+  ports:
+  - port: 3000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: webhook-test
+  name: pod-mutating-webhook
+spec:
+  selector:
+    matchLabels: &labels
+      app.kubernetes.io/name: pod-mutating-webhook
+  template:
+    metadata:
+      labels: *labels
+    spec:
+      # Of course I had to add the nodeSelector
+      # here, too 😂
+      nodeSelector:
+        kubernetes.io/arch: arm64
+      containers:
+      - name: web
+        image: jgaskins/kubernetes-examples:mutating-webhooks
+        imagePullPolicy: Always
+        env:
+        - name: LOG_LEVEL
+          value: DEBUG
+        ports:
+        - protocol: TCP
+          name: http
+          containerPort: 3000
+        # Mount the certs created by Cert Manager into
+        # the app
+        volumeMounts:
+        - name: tls
+          mountPath: /certs
+          readOnly: true
+      volumes:
+      - name: tls
+        secret:
+          secretName: pod-mutating-webhook-tls
+
+####### CERT STUFF ######
+---
+# The self-signed cert issuer
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: selfsigned-issuer
+  namespace: webhook-test
+spec:
+  # Man, self-signed Issuers sure are simple, huh?
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: pod-mutating-webhook
+  namespace: webhook-test
+spec:
+  # This must be the name of the secret that
+  # you mount into your Deployment above!
+  secretName: pod-mutating-webhook-tls
+  # This must be `${serviceName}.${namespace}.svc`
+  dnsNames:
+  - pod-mutating-webhook.webhook-test.svc
+  issuerRef:
+    # Set this to your Issuer name above.
+    # Must be in the same namespace if you're
+    # not using a ClusterIssuer.
+    name: selfsigned-issuer

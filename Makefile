@@ -102,8 +102,11 @@ build: manifests generate fmt vet ## Build manager binary.
 generate-certs: ## Generates the certs required to run webhooks locally
 	mkdir -p $(CERTSDIR)
 	cd $(CERTSDIR) && \
-		openssl genrsa 2048 > tls.key && \
-		openssl req -new -x509 -nodes -sha256 -days 365 -key tls.key -out tls.crt -subj "/C=XX"
+		openssl genrsa -out tls.key 2048 && \
+		openssl req -new -key tls.key -out tls.csr -subj "/C=XX" && \
+		openssl x509 -req -in tls.csr -signkey tls.key -out tls.crt -days 365 -extfile <(echo "subjectAltName=DNS:localhost,DNS:host.docker.internal,IP:127.0.0.1")
+		# openssl genrsa 2048 > tls.key && \
+		# openssl req -new -x509 -nodes -sha256 -days 365 -key tls.key -out tls.crt -subj "/C=XX"
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.

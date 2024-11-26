@@ -37,6 +37,7 @@ import (
 
 	batchv1 "github.com/brongulus/secret-controller/api/v1"
 	"github.com/brongulus/secret-controller/internal/controller"
+	webhookcorev1 "github.com/brongulus/secret-controller/internal/webhook/v1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -94,6 +95,7 @@ func main() {
 
 	webhookServer := webhook.NewServer(webhook.Options{
 		TLSOpts: tlsOpts,
+		CertDir: "/tmp/k8s-webhook-server/serving-certs",
 	})
 
 	// Metrics endpoint is enabled in 'config/default/kustomization.yaml'. The Metrics options configure the server.
@@ -150,6 +152,13 @@ func main() {
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ImmutableImages")
 		os.Exit(1)
+	}
+	// nolint:goconst
+	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
+		if err = webhookcorev1.SetupSecretWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "Secret")
+			os.Exit(1)
+		}
 	}
 	// +kubebuilder:scaffold:builder
 

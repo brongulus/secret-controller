@@ -63,7 +63,7 @@ func (r *ImmutableImagesReconciler) tagSecretAsImmutable(ctx context.Context, re
 			log.Error(err, "Could not fetch secret")
 			return secretName, err
 		}
-		log.Info("Ignoring not found since secret is deleted")
+		log.Info("Ignoring not found since secret is deleted or not created")
 		return secretName, nil
 	}
 
@@ -85,14 +85,14 @@ func (r *ImmutableImagesReconciler) tagSecretAsImmutable(ctx context.Context, re
 
 func (r *ImmutableImagesReconciler) addSecretToImageMap(ctx context.Context, images *batchv1.ImmutableImages, imageName, secretName string) error {
 	// log := log.FromContext(ctx)
-	// if !slices.Contains(images.Status.ImmutableSecrets, secretName) {
-	// 	images.Status.ImmutableSecrets = append(images.Status.ImmutableSecrets, secretName)
-	// 	log.V(1).Info(fmt.Sprintf("Adding secret %s to status", secretName))
-	// }
+	if !slices.Contains(images.Spec.ImmutableSecrets, secretName) {
+		images.Spec.ImmutableSecrets = append(images.Spec.ImmutableSecrets, secretName)
+		fmt.Printf("Adding secret %s to status\n", secretName)
+	}
 
 	if _, found := images.Spec.ImageSecretsMap[imageName]; found {
 		if !slices.Contains(images.Spec.ImageSecretsMap[imageName], secretName) {
-			fmt.Printf("Adding secret %s to status\n", secretName)
+			// fmt.Printf("Adding secret %s to status\n", secretName)
 			images.Spec.ImageSecretsMap[imageName] = append(images.Spec.ImageSecretsMap[imageName], secretName)
 		}
 	}
@@ -183,7 +183,7 @@ func (r *ImmutableImagesReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			log.Error(err, "Could not fetch imagelist")
 			return ctrl.Result{}, err
 		}
-		log.Info("Ignoring not found since imagelist is deleted")
+		log.Info("Ignoring not found since imagelist is deleted or not created")
 		return ctrl.Result{}, nil
 	}
 	// TODO: Updates to the CR
@@ -204,9 +204,9 @@ func (r *ImmutableImagesReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if controllerutil.ContainsFinalizer(images, imageFinalizer) {
 			// our finalizer is present, so lets handle any external dependency
 			fmt.Println("=== CR has finalizer")
-			if res, err := r.removeImmutableRestartSecret(ctx, req, images); err != nil {
-				return res, err
-			}
+			// if err := r.removeImmutableRestartSecret(ctx, req, images); err != nil {
+			// 	return ctrl.Result{}, err
+			// }
 
 			// remove our finalizer from the list and update it.
 			controllerutil.RemoveFinalizer(images, imageFinalizer)
@@ -245,13 +245,14 @@ func (r *ImmutableImagesReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			// DONE: Is it an issue if early return happens i.e.
 			// it errors out while only tagging one secret and the
 			// rest aren't updated? Maybe call reconcile again
-			_, err := r.tagSecretAsImmutable(ctx, req, secret)
-			if err != nil {
-				return ctrl.Result{}, err
-			}
+			// _, err := r.tagSecretAsImmutable(ctx, req, secret)
+			// if err != nil {
+			// 	return ctrl.Result{}, err
+			// }
 		}
 	}
 	log.V(1).Info(">>> Reconcile Over")
+	fmt.Println("=======================================")
 	return ctrl.Result{}, nil
 }
 
@@ -286,7 +287,7 @@ func (r *ImmutableImagesReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *ImmutableImagesReconciler) removeImmutableRestartSecret(ctx context.Context, req ctrl.Request, images *batchv1.ImmutableImages) (ctrl.Result, error) {
+func (r *ImmutableImagesReconciler) removeImmutableRestartSecret(ctx context.Context, req ctrl.Request, images *batchv1.ImmutableImages) error {
 	log := log.FromContext(ctx)
 	// TODO figure out update logic
 	for _, image := range images.Spec.ImageSecretsMap {
@@ -299,13 +300,17 @@ func (r *ImmutableImagesReconciler) removeImmutableRestartSecret(ctx context.Con
 				Name:      secretName,
 				Namespace: req.Namespace,
 			}
-			if err := r.Get(ctx, secretNamespacedName, immutableSecret); err != nil { // FIXME
-				log.Error(err, "Could not fetch secret")
-				return ctrl.Result{}, client.IgnoreNotFound(err)
+			if err := r.Get(ctx, secretNamespacedName, immutableSecret); err != nil {
+				if !errors.IsNotFound(err) {
+					log.Error(err, "Could not fetch secret")
+					return err
+				}
+				log.Info("Ignoring not found since secret is deleted or not created")
+				return nil
 			}
 			if immutableSecret.Immutable == nil || *immutableSecret.Immutable != true {
 				log.Info("Immutable secret is not marked as immutable!")
-				return ctrl.Result{}, nil
+				return nil
 			}
 
 			// FIXME: Look for the webhook approach compared to secret re-creation
@@ -322,17 +327,17 @@ func (r *ImmutableImagesReconciler) removeImmutableRestartSecret(ctx context.Con
 
 			if err := r.Delete(ctx, immutableSecret); err != nil {
 				if !errors.IsNotFound(err) {
-					return ctrl.Result{}, err
+					return err
 				}
 			}
 			fmt.Printf("Immutable secret %s is deleted\n", secretName)
 
 			if err := r.Create(ctx, updatedSecret); err != nil {
-				return ctrl.Result{}, err
+				return err
 			}
 			fmt.Printf("Immutable secret %s is recreated as mutable\n", secretName)
 		}
 	}
 
-	return ctrl.Result{}, nil
+	return nil
 }

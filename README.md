@@ -11,8 +11,8 @@ Ref: [Secrets](https://kubernetes.io/docs/concepts/configuration/secret/#secret-
 
 ## TODOs 
 - Check if it's possible to edit the secret from the pod itself!
-- Remove statefulness from the CR to allow for updates to the list
-Think about doing it without the map somehow (if the status thing happens, what we can do is every reconcile, create the spec and status, so that there's no state to keep track of)
+- Remove statefulness from the CR to allow for updates to the list. Think about doing it without the map somehow (if the webhook thing happens, what we can do is every reconcile, create the spec and status, so that there's no state to keep track of)
+- Check for pod deletion updating the CR as well, since the image that is tracked in the CR could be only referred by the deleted pod.
 - Check when secret is deleted and a pod is created that refers it (secret Get failure)
 - Add namespace to the CR as well
 - Validating Webhook (list of immutable secrets in CR status, on removal of image from the list, update the secret list, annotation?), webhook implements the immutability indirectly to not have to resort to deletion of secrets and pods.
