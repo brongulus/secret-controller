@@ -234,6 +234,12 @@ func (r *ImmutableImagesReconciler) SetupWithManager(mgr ctrl.Manager) error {
 							},
 						})
 					}
+
+					if requests == nil {
+						return nil
+					}
+					fmt.Printf(">>> Pod is %s <<<\n", pod.Name)
+					fmt.Printf("Requested imagelist is : %v\n\n", requests)
 					return requests
 				},
 			),

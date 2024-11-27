@@ -82,6 +82,7 @@ func (v *SecretCustomValidator) ValidateUpdate(ctx context.Context, oldObj, newO
 	if !ok {
 		return nil, fmt.Errorf("expected a Secret object for the newObj but got %T", newObj)
 	}
+	fmt.Println("=======================================")
 	secretlog.Info("Validation for Secret upon update", "name", secret.GetName())
 
 	// TODO(user): fill in your validation logic upon object update.
@@ -104,6 +105,7 @@ func (v *SecretCustomValidator) ValidateUpdate(ctx context.Context, oldObj, newO
 		}
 	}
 
+	fmt.Println("Secret was allowed to be updated")
 	return nil, nil
 }
 

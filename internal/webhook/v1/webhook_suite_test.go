@@ -33,6 +33,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	// +kubebuilder:scaffold:imports
+	batchv1 "github.com/brongulus/secret-controller/api/v1"
 	apimachineryruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -91,6 +92,9 @@ var _ = BeforeSuite(func() {
 	Expect(cfg).NotTo(BeNil())
 
 	scheme := apimachineryruntime.NewScheme()
+	err = batchv1.AddToScheme(scheme)
+	Expect(err).NotTo(HaveOccurred())
+
 	err = corev1.AddToScheme(scheme)
 	Expect(err).NotTo(HaveOccurred())
 

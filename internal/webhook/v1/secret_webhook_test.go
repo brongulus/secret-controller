@@ -17,55 +17,124 @@ limitations under the License.
 package v1
 
 import (
+	"context"
+	"fmt"
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	batchv1 "github.com/brongulus/secret-controller/api/v1"
 	corev1 "k8s.io/api/core/v1"
-	// TODO (user): Add any additional imports if needed
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 var _ = Describe("Secret Webhook", func() {
 	var (
-		obj       *corev1.Secret
+		newObj    *corev1.Secret
 		oldObj    *corev1.Secret
+		imageList *batchv1.ImmutableImages
 		validator SecretCustomValidator
+		timeout   = time.Second * 10
+		interval  = time.Millisecond * 250
 	)
 
 	BeforeEach(func() {
-		obj = &corev1.Secret{}
-		oldObj = &corev1.Secret{}
-		validator = SecretCustomValidator{}
+		newObj = &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "secret-1",
+				Namespace: "default",
+			},
+			StringData: map[string]string{
+				"password.txt": "oldpass",
+			},
+			Type: "Opaque",
+		}
+		oldObj = &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "secret-1",
+				Namespace: "default",
+			},
+			StringData: map[string]string{
+				"password.txt": "oldpass",
+			},
+			Type: "Opaque",
+		}
+		validator = SecretCustomValidator{
+			client: k8sClient,
+		}
+		imageList := &batchv1.ImmutableImages{}
+		typeNamespacedName := types.NamespacedName{
+			Name:      "imagelist",
+			Namespace: "default",
+		}
+		ctx := context.Background()
+		By("creating the custom resource for the Kind ImmutableImages")
+		err := k8sClient.Get(ctx, typeNamespacedName, imageList)
+		if err != nil && errors.IsNotFound(err) {
+			imageList := &batchv1.ImmutableImages{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "imagelist",
+					Namespace: "default",
+				},
+				Spec: batchv1.ImmutableImagesSpec{
+					ImageSecretsMap: map[string][]string{
+						"alpine:latest": {},
+						"nginx:0.3":     {},
+					},
+					ImmutableSecrets: []string{
+						"secret-2",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, imageList)).To(Succeed())
+		}
+
 		Expect(validator).NotTo(BeNil(), "Expected validator to be initialized")
 		Expect(oldObj).NotTo(BeNil(), "Expected oldObj to be initialized")
-		Expect(obj).NotTo(BeNil(), "Expected obj to be initialized")
-		// TODO (user): Add any setup logic common to all tests
+		Expect(newObj).NotTo(BeNil(), "Expected newObj to be initialized")
+		Expect(imageList).NotTo(BeNil(), "Expected CR to be initialized")
 	})
 
 	AfterEach(func() {
 		// TODO (user): Add any teardown logic common to all tests
 	})
 
-	Context("When creating or updating Secret under Validating Webhook", func() {
-		// TODO (user): Add logic for validating webhooks
-		// Example:
-		// It("Should deny creation if a required field is missing", func() {
-		//     By("simulating an invalid creation scenario")
-		//     obj.SomeRequiredField = ""
-		//     Expect(validator.ValidateCreate(ctx, obj)).Error().To(HaveOccurred())
-		// })
-		//
-		// It("Should admit creation if all required fields are present", func() {
-		//     By("simulating an invalid creation scenario")
-		//     obj.SomeRequiredField = "valid_value"
-		//     Expect(validator.ValidateCreate(ctx, obj)).To(BeNil())
-		// })
-		//
-		// It("Should validate updates correctly", func() {
-		//     By("simulating a valid update scenario")
-		//     oldObj.SomeRequiredField = "updated_value"
-		//     obj.SomeRequiredField = "updated_value"
-		//     Expect(validator.ValidateUpdate(ctx, oldObj, obj)).To(BeNil())
-		// })
+	Context("When updating Secret under Validating Webhook", func() {
+		It("Should update when secret is not in immutable list", func() {
+			oldObj.StringData["password.txt"] = "oldpass"
+			By("adding secret to list")
+			// FIXME not registering imageList
+			fmt.Printf("Imagelist is %#v\n", imageList)
+			By("simulating a valid update scenario")
+			newObj.StringData["password.txt"] = "newpasss"
+			Expect(validator.ValidateUpdate(ctx, oldObj, newObj)).To(BeNil(),
+				"Expected validation to update the secret password.txt")
+		})
+
+		It("Should fail for update in immutable secret", func() {
+			oldObj.StringData["password.txt"] = "newpasss"
+			By("adding secret to list")
+			imageLookupKey := types.NamespacedName{
+				Name:      "imagelist",
+				Namespace: "default",
+			}
+			createdImage := &batchv1.ImmutableImages{}
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, imageLookupKey, createdImage)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			createdImage.Spec.ImmutableSecrets = append(createdImage.Spec.ImmutableSecrets, "secret-1")
+			Expect(k8sClient.Update(ctx, createdImage)).To(Succeed())
+
+			fmt.Printf("Imagelist is %#v\n", createdImage)
+			By("simulating a invalid update scenario")
+			newObj.StringData["password.txt"] = "passupdatefail"
+			Expect(validator.ValidateUpdate(ctx, oldObj, newObj)).Error().To(HaveOccurred(),
+				"Expected validation to fail for updating immutable secret")
+		})
 	})
 
 })

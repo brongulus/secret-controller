@@ -4,7 +4,5 @@ metadata:
   name: immutable-secret-image-list
 spec:
   imageSecretMap:
-    'alpine:latest' :
-    - ""
-    'nginx:0.3' :
-    - ""
+    'alpine:latest' : []
+    'nginx:0.3' : []

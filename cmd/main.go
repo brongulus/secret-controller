@@ -95,7 +95,7 @@ func main() {
 
 	webhookServer := webhook.NewServer(webhook.Options{
 		TLSOpts: tlsOpts,
-		CertDir: "/tmp/k8s-webhook-server/serving-certs",
+		CertDir: "/tmp/k8s-webhook-server/serving-certs", // required for local run
 	})
 
 	// Metrics endpoint is enabled in 'config/default/kustomization.yaml'. The Metrics options configure the server.
