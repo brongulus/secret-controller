@@ -1,4 +1,4 @@
-# Adds namespace to decrd/inject-ca-fromall resources.
+# Adds namespace to decrd/all resources.
 namespace: secret-controller-system
 
 # Value of this field is prepended to the
@@ -47,7 +47,7 @@ patches:
 
 # [CERTMANAGER] To enable cert-manager, uncomment all sections with 'CERTMANAGER' prefix.
 # Uncomment the following replacements to add the cert-manager CA injection annotations
-#replacements:
+replacements:
 - source: # Uncomment the following block if you have a ValidatingWebhook (--programmatic-validation)
     kind: Certificate
     group: cert-manager.io

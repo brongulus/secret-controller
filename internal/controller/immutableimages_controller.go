@@ -27,7 +27,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -45,6 +44,7 @@ type ImmutableImagesReconciler struct {
 // +kubebuilder:rbac:groups=batch.github.com,resources=immutableimages,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=batch.github.com,resources=immutableimages/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=batch.github.com,resources=immutableimages/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;get;
 
 // Add the given secret to the immutableSecretsList
 func (r *ImmutableImagesReconciler) addSecretToImageMap(ctx context.Context, images *batchv1.ImmutableImages, imageName, secretName string) error {
@@ -151,37 +151,36 @@ func (r *ImmutableImagesReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, nil
 	}
 	// TODO: Updates to the CR
-
 	// CR deletion
-	imageFinalizer := "batch.github.com/finalizer"
-	// Check if the object is being deleted
-	if images.GetDeletionTimestamp().IsZero() {
-		if !controllerutil.ContainsFinalizer(images, imageFinalizer) {
-			controllerutil.AddFinalizer(images, imageFinalizer)
-			if err := r.Update(ctx, images); err != nil {
-				return ctrl.Result{}, err
-			}
-			// log.V(1).Info("finalizer added ===")
-		}
-	} else {
-		// Object being deleted
-		if controllerutil.ContainsFinalizer(images, imageFinalizer) {
-			// our finalizer is present, so lets handle any external dependency
-			fmt.Println("=== CR has finalizer")
-			// if err := r.removeImmutableRestartSecret(ctx, req, images); err != nil {
-			// 	return ctrl.Result{}, err
-			// }
+	// imageFinalizer := "batch.github.com/finalizer"
+	// // Check if the object is being deleted
+	// if images.GetDeletionTimestamp().IsZero() {
+	// 	if !controllerutil.ContainsFinalizer(images, imageFinalizer) {
+	// 		controllerutil.AddFinalizer(images, imageFinalizer)
+	// 		if err := r.Update(ctx, images); err != nil {
+	// 			return ctrl.Result{}, err
+	// 		}
+	// 		// log.V(1).Info("finalizer added ===")
+	// 	}
+	// } else {
+	// 	// Object being deleted
+	// 	if controllerutil.ContainsFinalizer(images, imageFinalizer) {
+	// 		// our finalizer is present, so lets handle any external dependency
+	// 		fmt.Println("=== CR has finalizer")
+	// 		// if err := r.removeImmutableRestartSecret(ctx, req, images); err != nil {
+	// 		// 	return ctrl.Result{}, err
+	// 		// }
 
-			// remove our finalizer from the list and update it.
-			controllerutil.RemoveFinalizer(images, imageFinalizer)
-			// FIXME
-			if err := r.Update(ctx, images); err != nil {
-				return ctrl.Result{}, err
-			}
-		}
-		// Stop reconciliation as the item is being deleted
-		return ctrl.Result{}, nil
-	}
+	// 		// remove our finalizer from the list and update it.
+	// 		controllerutil.RemoveFinalizer(images, imageFinalizer)
+	// 		// FIXME
+	// 		if err := r.Update(ctx, images); err != nil {
+	// 			return ctrl.Result{}, err
+	// 		}
+	// 	}
+	// 	// Stop reconciliation as the item is being deleted
+	// 	return ctrl.Result{}, nil
+	// }
 
 	podList := &corev1.PodList{}
 	if err := r.List(ctx, podList, client.InNamespace(req.Namespace)); err != nil {
