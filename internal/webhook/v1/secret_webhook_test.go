@@ -48,7 +48,7 @@ var _ = Describe("Secret Webhook", func() {
 				Namespace: "default",
 			},
 			StringData: map[string]string{
-				"password.txt": "oldpass",
+				"password.txt": "newpass",
 			},
 			Type: "Opaque",
 		}
@@ -104,18 +104,24 @@ var _ = Describe("Secret Webhook", func() {
 
 	Context("When updating Secret under Validating Webhook", func() {
 		It("Should update when secret is not in immutable list", func() {
-			oldObj.StringData["password.txt"] = "oldpass"
 			By("adding secret to list")
-			// FIXME not registering imageList
-			fmt.Printf("Imagelist is %#v\n", imageList)
+			imageLookupKey := types.NamespacedName{
+				Name:      "imagelist",
+				Namespace: "default",
+			}
+			createdImage := &batchv1.ImmutableImages{}
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, imageLookupKey, createdImage)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+			fmt.Printf("ImmutableSecretlist is %v\n", createdImage.Spec.ImmutableSecrets)
+			fmt.Printf("Imagelist is %v\n", imageList)
 			By("simulating a valid update scenario")
-			newObj.StringData["password.txt"] = "newpasss"
+			newObj.StringData["password.txt"] = "newpassword"
 			Expect(validator.ValidateUpdate(ctx, oldObj, newObj)).To(BeNil(),
 				"Expected validation to update the secret password.txt")
 		})
 
 		It("Should fail for update in immutable secret", func() {
-			oldObj.StringData["password.txt"] = "newpasss"
 			By("adding secret to list")
 			imageLookupKey := types.NamespacedName{
 				Name:      "imagelist",
@@ -129,7 +135,7 @@ var _ = Describe("Secret Webhook", func() {
 			createdImage.Spec.ImmutableSecrets = append(createdImage.Spec.ImmutableSecrets, "secret-1")
 			Expect(k8sClient.Update(ctx, createdImage)).To(Succeed())
 
-			fmt.Printf("Imagelist is %#v\n", createdImage)
+			fmt.Printf("ImmutableSecretlist is %v\n", createdImage.Spec.ImmutableSecrets)
 			By("simulating a invalid update scenario")
 			newObj.StringData["password.txt"] = "passupdatefail"
 			Expect(validator.ValidateUpdate(ctx, oldObj, newObj)).Error().To(HaveOccurred(),

@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -202,12 +203,15 @@ var _ = Describe("ImmutableImages Controller", func() {
 				g.Expect(k8sClient.Get(ctx, podLookupKey, createdPod2)).To(Succeed())
 			}, timeout, interval).Should(Succeed())
 
+			resource := &batchv1.ImmutableImages{}
+
 			By("Checking that the attached secret is immutable")
 			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, typeNamespacedName, resource)).To(Succeed(), "should GET the CR")
 				g.Expect(k8sClient.Get(ctx, secretLookupKey, createdSecret)).To(Succeed(), "should GET the Secret")
-				g.Expect(createdSecret.Immutable).To(HaveValue(Equal(true)), "secret should be Immutable") // Equal does strict type check, hance HaveValue
+				g.Expect(slices.Contains(resource.Spec.ImmutableSecrets, createdSecret.Name)).To(Equal(true), "secret should be in Immutable list")
 				g.Expect(k8sClient.Get(ctx, secretLookupKey2, createdSecret2)).To(Succeed(), "should GET the Secret")
-				g.Expect(createdSecret2.Immutable).To(HaveValue(Equal(true)), "secret should be Immutable") // Equal does strict type check, hance HaveValue
+				g.Expect(slices.Contains(resource.Spec.ImmutableSecrets, createdSecret2.Name)).To(Equal(true), "secret should be in Immutable list")
 			}, timeout, interval).Should(Succeed(), "should attach our secret to the pod")
 
 		})
