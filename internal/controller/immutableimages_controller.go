@@ -72,7 +72,7 @@ func (r *ImmutableImagesReconciler) fetchPodSecrets(ctx context.Context, images 
 	// pod.Volumes.Secret.SecretName
 	for _, volume := range pod.Spec.Volumes {
 		if volume.Secret != nil {
-			// FIXME Check if the particular volume has an associated immutable image
+			// DONE Check if the particular volume has an associated immutable image
 			imageName := ""
 			hasImmutableImage := slices.ContainsFunc(pod.Spec.Containers, func(container corev1.Container) bool {
 				for _, mount := range container.VolumeMounts {
@@ -113,6 +113,8 @@ func (r *ImmutableImagesReconciler) fetchPodSecrets(ctx context.Context, images 
 			}
 		}
 		// pod.Containers.EnvFrom.SecretRef.Name
+		// Use envFrom to define all of the Secret's data as container environment variables.
+		// The key from the Secret becomes the environment variable name in the Pod.
 		for _, envFrom := range container.EnvFrom {
 			if envFrom.SecretRef != nil && hasImmutableImage {
 				secretName := envFrom.SecretRef.Name
@@ -129,7 +131,7 @@ func (r *ImmutableImagesReconciler) fetchPodSecrets(ctx context.Context, images 
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
+// DONE(user): Modify the Reconcile function to compare the state specified by
 // the ImmutableImages object against the actual cluster state, and then
 // perform operations to make the cluster state reflect the state specified by
 // the user.
@@ -150,8 +152,8 @@ func (r *ImmutableImagesReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		log.Info("Ignoring not found since imagelist is deleted or not created")
 		return ctrl.Result{}, nil
 	}
-	// TODO: Updates to the CR
-	// DONE Start with a clean slate
+	// DONE: Updates to the CR
+	// DONE: Start with a clean slate
 	for image := range images.Spec.ImageSecretsMap {
 		images.Spec.ImageSecretsMap[image] = []string{}
 	}
@@ -174,7 +176,7 @@ func (r *ImmutableImagesReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			fmt.Printf("Secret is %s\n", secret)
 		}
 	}
-	if err := r.Update(ctx, images); err != nil { // FIXME
+	if err := r.Update(ctx, images); err != nil { // DONE
 		log.Error(err, "Could not update immutable secret list")
 		return ctrl.Result{}, err
 	}
@@ -219,7 +221,3 @@ func (r *ImmutableImagesReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Named("immutableimages").
 		Complete(r)
 }
-
-// func (r *ImmutableImagesReconciler) removeImmutableRestartSecret(ctx context.Context, req ctrl.Request, images *batchv1.ImmutableImages) error {
-// 	log := log.FromContext(ctx)
-// }
