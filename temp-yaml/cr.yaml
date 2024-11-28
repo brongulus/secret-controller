@@ -5,4 +5,4 @@ metadata:
 spec:
   imageSecretMap:
     'alpine:latest' : []
-    'nginx:0.3' : []
+    'nginx:1.24' : []

@@ -1,0 +1,7 @@
+[
+  {
+    "op": "remove",
+    "path": "/spec/imageSecretMap/alpine:latest",
+    "value": []
+  }
+]

@@ -82,14 +82,14 @@ func (v *SecretCustomValidator) ValidateUpdate(ctx context.Context, oldObj, newO
 	if !ok {
 		return nil, fmt.Errorf("expected a Secret object for the newObj but got %T", newObj)
 	}
-	fmt.Println("=======================================")
+	fmt.Println("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 	secretlog.Info("Validation for Secret upon update", "name", secret.GetName())
 
 	// TODO(user): fill in your validation logic upon object update.
 	// How to link secret obj with the imagelist CR map[image]sec, list of actively blacklisted secrets, this should only check the list
 	// However reconcile looks at the map to update the blacklisted secret list on deletion/updation in CR
 
-	// DONE: panic!! Get CR list, check if secret is contained in any of their status
+	// DONE: Get CR list, check if secret is contained in any of their status
 	immutableImagesList := &batchv1.ImmutableImagesList{}
 
 	if err := v.client.List(ctx, immutableImagesList); err != nil {

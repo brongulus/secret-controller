@@ -44,14 +44,14 @@ type ImmutableImagesReconciler struct {
 // +kubebuilder:rbac:groups=batch.github.com,resources=immutableimages,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=batch.github.com,resources=immutableimages/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=batch.github.com,resources=immutableimages/finalizers,verbs=update
-// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=pods,verbs=watch;create;list;update;patch;delete
 
 // Add the given secret to the immutableSecretsList
 func (r *ImmutableImagesReconciler) addSecretToImageMap(ctx context.Context, images *batchv1.ImmutableImages, imageName, secretName string) error {
 	// log := log.FromContext(ctx)
 	if !slices.Contains(images.Spec.ImmutableSecrets, secretName) {
 		images.Spec.ImmutableSecrets = append(images.Spec.ImmutableSecrets, secretName)
-		fmt.Printf("Adding secret %s to status\n", secretName)
+		fmt.Printf("Adding secret %s to immutableSecrets\n", secretName)
 	}
 
 	if _, found := images.Spec.ImageSecretsMap[imageName]; found {
@@ -151,36 +151,12 @@ func (r *ImmutableImagesReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, nil
 	}
 	// TODO: Updates to the CR
-	// CR deletion
-	// imageFinalizer := "batch.github.com/finalizer"
-	// // Check if the object is being deleted
-	// if images.GetDeletionTimestamp().IsZero() {
-	// 	if !controllerutil.ContainsFinalizer(images, imageFinalizer) {
-	// 		controllerutil.AddFinalizer(images, imageFinalizer)
-	// 		if err := r.Update(ctx, images); err != nil {
-	// 			return ctrl.Result{}, err
-	// 		}
-	// 		// log.V(1).Info("finalizer added ===")
-	// 	}
-	// } else {
-	// 	// Object being deleted
-	// 	if controllerutil.ContainsFinalizer(images, imageFinalizer) {
-	// 		// our finalizer is present, so lets handle any external dependency
-	// 		fmt.Println("=== CR has finalizer")
-	// 		// if err := r.removeImmutableRestartSecret(ctx, req, images); err != nil {
-	// 		// 	return ctrl.Result{}, err
-	// 		// }
-
-	// 		// remove our finalizer from the list and update it.
-	// 		controllerutil.RemoveFinalizer(images, imageFinalizer)
-	// 		// FIXME
-	// 		if err := r.Update(ctx, images); err != nil {
-	// 			return ctrl.Result{}, err
-	// 		}
-	// 	}
-	// 	// Stop reconciliation as the item is being deleted
-	// 	return ctrl.Result{}, nil
-	// }
+	// DONE Start with a clean slate
+	for image := range images.Spec.ImageSecretsMap {
+		images.Spec.ImageSecretsMap[image] = []string{}
+	}
+	images.Spec.ImmutableSecrets = nil
+	// fmt.Printf("---------- Reset CR ---------\n")
 
 	podList := &corev1.PodList{}
 	if err := r.List(ctx, podList, client.InNamespace(req.Namespace)); err != nil {
@@ -188,23 +164,19 @@ func (r *ImmutableImagesReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	for _, pod := range podList.Items {
-		// Reconcile
 		fmt.Printf("Pod is %s\n", pod.Name)
-
 		// Get list of all the secrets attached to a pod
 		secretList, err := r.fetchPodSecrets(ctx, images, &pod)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get pod secrets: %w", err)
 		}
-		if err := r.Update(ctx, images); err != nil { // FIXME
-			log.Error(err, "Could not update immutable secret list")
-			return ctrl.Result{}, err
-		}
-
-		// Tag each secret as immutable
 		for secret := range secretList {
 			fmt.Printf("Secret is %s\n", secret)
 		}
+	}
+	if err := r.Update(ctx, images); err != nil { // FIXME
+		log.Error(err, "Could not update immutable secret list")
+		return ctrl.Result{}, err
 	}
 	log.V(1).Info(">>> Reconcile Over")
 	fmt.Println("=======================================")

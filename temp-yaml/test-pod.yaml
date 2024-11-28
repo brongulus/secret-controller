@@ -10,8 +10,8 @@ spec:
       secretName: secret-added-later
   containers:
     - name: secret-container
-      image: nginx:0.3
-      command: [ "/bin/sh", "-c", "cat /etc/foo/username.txt; echo; cat /etc/foo/password.txt" ]
+      image: nginx:1.24
+      # command: [ "/bin/sh", "-c", "cat /etc/foo/username.txt; echo; cat /etc/foo/password.txt" ]
       volumeMounts:
       - name: credentials
         mountPath: "/etc/foo"
