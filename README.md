@@ -1,11 +1,11 @@
 # secret-controller
-The controller works by adding immutability to all the secrets that are currently being used by pods however it restricts it to a set of images that are specified by the ImmutableImages custom resource.
+The controller works by adding immutability to all the secrets that are currently being used by pods however it restricts it to a set of images that are specified by the ImmutableImages custom resource. However it doesn't actually tag the secret as immutable, rather it keeps a list of such secrets in a Custom Resource and a validating webhook for secrets is triggered on any updates which checks if the particular secret is part of the ImmutableSecrets list of the CR or not.
 
 Upon any updates to to ImmutableImages or creation of a new pod, the reconciliation occurs, it looks for all the new secrets that should be marked as immutable by looking for the various ways in which a secret is attached to containers.
 
 Preventing changes to the data of an existing Secret has the following benefits:
 - protects you from accidental (or unwanted) updates that could cause applications outages
-- improves cluster performance by reducing apiserver 
+- improves cluster performance by reducing apiserver load (not applicable with our webhook)
 
 Ref: [Secrets](https://kubernetes.io/docs/concepts/configuration/secret/#secret-immutable)
 
@@ -15,7 +15,6 @@ Ref: [Secrets](https://kubernetes.io/docs/concepts/configuration/secret/#secret-
 - Check for pod deletion updating the CR as well, since the image that is tracked in the CR could be only referred by the deleted pod.
 - Check when secret is deleted and a pod is created that refers it (secret Get failure)
 - Add namespace to the CR as well
-- Validating Webhook (list of immutable secrets in CR status, on removal of image from the list, update the secret list, annotation?), webhook implements the immutability indirectly to not have to resort to deletion of secrets and pods.
 
 ## Getting Started
 

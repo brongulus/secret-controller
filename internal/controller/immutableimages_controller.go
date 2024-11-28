@@ -44,7 +44,7 @@ type ImmutableImagesReconciler struct {
 // +kubebuilder:rbac:groups=batch.github.com,resources=immutableimages,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=batch.github.com,resources=immutableimages/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=batch.github.com,resources=immutableimages/finalizers,verbs=update
-// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;get;
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
 
 // Add the given secret to the immutableSecretsList
 func (r *ImmutableImagesReconciler) addSecretToImageMap(ctx context.Context, images *batchv1.ImmutableImages, imageName, secretName string) error {
